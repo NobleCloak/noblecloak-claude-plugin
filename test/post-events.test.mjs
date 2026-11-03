@@ -693,6 +693,7 @@ test('e2e: a session with one subagent fan-out reconstructs to 0 orphans offline
 
   // Pre↔post pairing: each tool_use_id has exactly one :pre and one :post.
   const toolCalls = bodies.filter((b) => TOOL_CALL_TYPES.includes(b.type));
+  assert.equal(toolCalls.length, 4, 'the filter sees both tool calls, pre and post');
   const byTool = {};
   for (const b of toolCalls) {
     const [tid, phase] = b.id.split(':');
