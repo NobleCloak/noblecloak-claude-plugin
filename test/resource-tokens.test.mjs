@@ -17,8 +17,8 @@ import {
 } from '../scripts/lib/governance.mjs';
 import { makeStateDir, runScript, startStub, REFRESH_PATH, REPO_ROOT } from './helpers.mjs';
 
-const GATEWAY = 'https://mcp.beta.shared.bianoble.com';
-const GOVERN = 'https://govern.beta.shared.bianoble.com';
+const GATEWAY = 'https://mcp.noblecloak.com';
+const GOVERN = 'https://govern.noblecloak.com';
 
 function mcpFile(dir, url = `${GATEWAY}/v1/mcp`) {
   const file = join(dir, 'mcp.json');
@@ -33,7 +33,7 @@ function seed(dir, auth) {
   );
 }
 
-test('governResourceIndicator: mcp.<env>.<root> → govern.<env>.<root>', () => {
+test('governResourceIndicator: mcp.<host> → govern.<host>', () => {
   const dir = makeStateDir();
   assert.equal(governResourceIndicator({ NOBLECLOAK_MCP_FILE: mcpFile(dir) }), GOVERN);
 });

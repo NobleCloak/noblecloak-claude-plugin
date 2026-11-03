@@ -91,8 +91,8 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | Env var | Default | Purpose |
 |---|---|---|
 | `NOBLECLOAK_LOCAL_ENFORCE` | `false` (audit-only) | Flip to `true` to enforce server decisions |
-| `NOBLECLOAK_COO_URL` | `https://api.beta.shared.bianoble.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
-| `NOBLECLOAK_ISSUER` | `https://api.beta.shared.bianoble.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
+| `NOBLECLOAK_COO_URL` | `https://api.noblecloak.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
+| `NOBLECLOAK_ISSUER` | `https://api.noblecloak.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
 | `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over the default candidates when it holds an `auth.json`; see README "State" |

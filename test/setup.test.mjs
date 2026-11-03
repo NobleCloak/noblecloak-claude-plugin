@@ -280,7 +280,7 @@ test("propose: the child's exit code is the command's exit code", async () => {
   }
 });
 
-const BETA_GOVERN = 'https://govern.beta.shared.bianoble.com';
+const PROD_GOVERN = 'https://govern.noblecloak.com';
 
 test('propose: the approvals address is filled for a known govern origin, and a caller-set one is kept', async () => {
   const stub = await startStub();
@@ -291,10 +291,10 @@ test('propose: the approvals address is filled for a known govern origin, and a 
     return { status: 0 };
   };
   try {
-    const base = { ...env, NOBLECLOAK_GOVERN_URL: BETA_GOVERN, NC_BASE_URL: BETA_GOVERN };
+    const base = { ...env, NOBLECLOAK_GOVERN_URL: PROD_GOVERN, NC_BASE_URL: PROD_GOVERN };
     assert.equal(await runPropose({ args: ['--plan', 'p.json'], env: base, getToken: async () => 't', run }), 0);
     assert.equal(await runPropose({ args: ['--plan', 'p.json'], env: { ...base, NOBLECLOAK_APPROVALS_URL: 'https://mine.example.test/a' }, getToken: async () => 't', run }), 0);
-    assert.deepEqual(seen, ['https://shell.beta.shared.bianoble.com/approvals', 'https://mine.example.test/a']);
+    assert.deepEqual(seen, ['https://app.noblecloak.com/approvals', 'https://mine.example.test/a']);
   } finally {
     await stub.close();
   }

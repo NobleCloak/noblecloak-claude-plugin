@@ -35,7 +35,7 @@ import {
 // These can be overridden via environment variables for different environments.
 // Auth endpoints are NOT configured directly: they are discovered per RFC 8414
 // from {NOBLECLOAK_ISSUER}/.well-known/oauth-authorization-server (Core is the
-// OAuth 2.1 AS under the per-env API host; auth.bianoble.com does not exist).
+// OAuth 2.1 AS under the API host; the discovery document names its endpoints).
 
 const API_BASE_URL = process.env.NOBLECLOAK_API_URL || DEFAULT_ISSUER;
 // The OAuth client_id is resolved at login time via ensureRegisteredClientId

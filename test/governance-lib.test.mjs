@@ -1246,7 +1246,7 @@ test('recordWorkerDegraded: NEVER throws even when the state dir is unwritable (
 // The plugin's /authorize call omitted the `resource` parameter entirely, so
 // core's AS silently defaulted the bound audience
 // (`audience: code.resource ?? deps.resourceId`). The minted token therefore
-// LOOKED correctly bound (`aud: https://mcp.beta…`, no `resource` claim) while
+// LOOKED correctly bound (`aud: https://mcp.<host>`, no `resource` claim) while
 // the request was non-conformant — invisible to every resource-server-side log.
 // Under AS_ENFORCE_RESOURCE_INDICATOR=true that request is rejected outright
 // with `invalid_target`, which would break /noblecloak-login.
@@ -1260,10 +1260,10 @@ test('resolveResourceIndicator derives the MCP server ORIGIN from .mcp.json (dro
   writeFileSync(
     env.NOBLECLOAK_MCP_FILE,
     JSON.stringify({
-      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.beta.shared.bianoble.com/v1/mcp' } },
+      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.noblecloak.com/v1/mcp' } },
     })
   );
-  assert.equal(resolveResourceIndicator(env), 'https://mcp.beta.shared.bianoble.com');
+  assert.equal(resolveResourceIndicator(env), 'https://mcp.noblecloak.com');
 });
 
 test('resolveResourceIndicator honours an explicit NOBLECLOAK_MCP_RESOURCE override', () => {
@@ -1274,7 +1274,7 @@ test('resolveResourceIndicator honours an explicit NOBLECLOAK_MCP_RESOURCE overr
   writeFileSync(
     env.NOBLECLOAK_MCP_FILE,
     JSON.stringify({
-      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.beta.shared.bianoble.com/v1/mcp' } },
+      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } },
     })
   );
   assert.equal(resolveResourceIndicator(env), 'https://mcp.example.test');

@@ -171,9 +171,9 @@ node scripts/propose-tool.mjs --tool-ref mcp__acme__send --level external --poli
   reads of `~/.noblecloak/claude-plugin/auth.json` is an open decision for David.
 - **Approval link.** The shell serves the approvals module at `/approvals` (D-A87).
   The tab is locked until the Core `approvals` product is entitled for the org.
-  When `NOBLECLOAK_APPROVALS_URL` is unset and the govern origin is the beta one
-  (`https://govern.beta.shared.bianoble.com`), the script prints
-  `Approve it at https://shell.beta.shared.bianoble.com/approvals`. Any other govern
+  When `NOBLECLOAK_APPROVALS_URL` is unset and the govern origin is the production one
+  (`https://govern.noblecloak.com`), the script prints
+  `Approve it at https://app.noblecloak.com/approvals`. Any other govern
   origin has no default and prints "Approve it in the NobleCloak approvals
   module." Set `NOBLECLOAK_APPROVALS_URL` to override either. The script never
   opens the approval itself.
@@ -192,7 +192,9 @@ npm test    # node --test against a local stub HTTP server
 ```
 
 Environment variables are documented in
-[`docs/governance-hook.md`](docs/governance-hook.md).
+[`docs/governance-hook.md`](docs/governance-hook.md). The defaults point at the
+production NobleCloak deployment; to use another one, set the `NOBLECLOAK_*`
+variables there (and `NOBLECLOAK_MCP_FILE` for its gateway).
 
 ## Support
 

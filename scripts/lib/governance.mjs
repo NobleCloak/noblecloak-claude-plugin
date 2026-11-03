@@ -49,13 +49,15 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //
 //   NOBLECLOAK_ISSUER          OAuth issuer / API host. Discovery doc lives at
 //                            {issuer}/.well-known/oauth-authorization-server.
-//                            Default: beta API host (Core is the OAuth 2.1 AS,
-//                            packaged inside the core API — decided 2026-05-31).
+//                            Default: the production API host,
+//                            https://api.noblecloak.com (Core is the OAuth 2.1
+//                            AS, packaged inside the core API).
 //   NOBLECLOAK_COO_URL         COO API base for governance resolve. The resolve
 //                            endpoint is {base}/v1/coo/local/resolve. Default:
-//                            beta — the COO API serves API_PREFIX=/v1/coo on
-//                            api.beta.shared.bianoble.com (its beta values and
-//                            ingress).
+//                            the same production API host, where the COO API
+//                            is served under /v1/coo.
+//   Another deployment (a non-production one included) is selected by setting
+//   these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE (its gateway).
 //   NOBLECLOAK_LOCAL_ENFORCE   'true'/'1' flips the PreToolUse adapter from
 //                            audit-only (default) to enforce mode.
 //   NOBLECLOAK_DEV_TOKEN       DEV-ONLY bearer-token override while Core OAuth AS
@@ -72,8 +74,8 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            (epic brief #7) — when present the plugin hook
 //                            no-ops to avoid double-fire (spike Q3 finding).
 
-export const DEFAULT_ISSUER = 'https://api.beta.shared.bianoble.com';
-export const DEFAULT_COO_URL = 'https://api.beta.shared.bianoble.com';
+export const DEFAULT_ISSUER = 'https://api.noblecloak.com';
+export const DEFAULT_COO_URL = 'https://api.noblecloak.com';
 export const DEFAULT_RESOLVE_TIMEOUT_MS = 1500;
 export const RESOLVE_PATH = '/v1/coo/local/resolve';
 /** Audit-event ingest endpoint (brief #5 emitter; brief #3 owns the route). */
@@ -521,18 +523,15 @@ export function resolveResourceIndicator(env = process.env) {
 /**
  * The approvals module's default URL for a govern origin. The shell serves the
  * approvals module at `/approvals` (D-A87; the `govern` name belongs to the API
- * host), so the beta govern origin (`https://govern.beta.shared.bianoble.com`)
- * maps to `https://shell.beta.shared.bianoble.com/approvals`. Any other origin
- * (or null) has no known shell host: returns `null`, and the caller prints the
- * generic sentence. `NOBLECLOAK_APPROVALS_URL` overrides this at the call site.
+ * host), so the production govern origin (`https://govern.noblecloak.com`)
+ * maps to `https://app.noblecloak.com/approvals`. Any other origin (or null)
+ * has no known shell host: returns `null`, and the caller prints the generic
+ * sentence. `NOBLECLOAK_APPROVALS_URL` overrides this at the call site.
  */
-// A literal map, as briefed; display-only (no trust decision), so a miss fails
-// safe to the generic sentence. Brand-flip checklist: add the noblecloak govern
-// origin (https://govern.noblecloak.com, announced for the beta deployment)
-// here, or derive govern.<x> -> shell.<x>/approvals once
-// every deployment's shell hosts the approvals module.
+// A literal map: display-only (no trust decision), so a miss fails safe to the
+// generic sentence.
 const APPROVALS_URL_BY_GOVERN_ORIGIN = new Map([
-  ['https://govern.beta.shared.bianoble.com', 'https://shell.beta.shared.bianoble.com/approvals'],
+  ['https://govern.noblecloak.com', 'https://app.noblecloak.com/approvals'],
 ]);
 
 export function defaultApprovalsUrl(governOrigin) {
@@ -551,8 +550,8 @@ export function approvalsUrl(env, governOrigin) {
  * The RFC 8707 resource indicator for the govern module API (the audience of
  * the second user token). `NOBLECLOAK_GOVERN_URL` overrides; otherwise it is
  * derived from the gateway origin in .mcp.json by swapping the leading `mcp.`
- * label for `govern.` (`https://mcp.beta.shared.bianoble.com` →
- * `https://govern.beta.shared.bianoble.com`). Returns a bare origin, or `null`
+ * label for `govern.` (`https://mcp.noblecloak.com` →
+ * `https://govern.noblecloak.com`). Returns a bare origin, or `null`
  * (never throws) when neither source yields one — including a gateway host that
  * does not start with `mcp.`, where guessing would mint a token for the wrong
  * audience.
@@ -792,9 +791,9 @@ function parseProbeBody(text) {
 
 // ── OAuth discovery + refresh (D4 — ISSUER-IS-API-HOST re-point) ──────────
 //
-// The authorization server is NOT auth.bianoble.com (NXDOMAIN). Per the Core
-// OAuth AS decision (2026-05-31), Core is the OAuth 2.1 AS packaged under the
-// per-env API host; endpoints are discovered via RFC 8414:
+// The issuer the plugin is configured with is the API host. Core is the OAuth
+// 2.1 AS packaged under that host; endpoints are discovered via RFC 8414 (the
+// discovery document may name a different host for them):
 //   GET {issuer}/.well-known/oauth-authorization-server
 // and the token endpoint comes from the discovery doc (lands on
 // /auth/oauth/token once AS Stage 4 ships).
