@@ -96,7 +96,7 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | `NOBLECLOAK_API_URL` | the issuer (`NOBLECLOAK_ISSUER` or its default) | Base for `/noblecloak-login`'s connection registration, `POST {base}/mcp/connections` |
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
-| `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over the default candidates when it holds an `auth.json`; see README "State" |
+| `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
 | `NOBLECLOAK_SDK_HOOK_ACTIVE` | unset | Set by the future Agent SDK adapter; the plugin hook no-ops to avoid double-fire |
 | `NOBLECLOAK_SIGNED_OUT_RECHECK_MS` | `900000` (15 min) | How often a signed-out plugin re-tries its refresh grant |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_RETENTION` | `2000` | Max unshipped Pre records kept in the audit queue (newest kept) |

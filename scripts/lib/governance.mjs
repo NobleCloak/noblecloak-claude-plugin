@@ -236,14 +236,6 @@ export const MIGRATED_STATE_FILES = Object.freeze([
 
 export const MIGRATION_MARKER = 'migrated-from';
 
-function mtimeMs(file) {
-  try {
-    return statSync(file).mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Moves one file to mode 0600. Across filesystems (EXDEV) the content is written
  * to a 0600 temp name in the destination directory, the source is unlinked, and
@@ -276,10 +268,10 @@ function moveStateFile(from, to) {
 /** Earlier state directories that exist: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`, de-duplicated. */
 function legacyCandidates({ env, pluginRoot }) {
   const out = [];
-  const add = (dir, explicit = false) => {
-    if (dir && existsSync(dir) && !out.some((c) => c.dir === dir)) out.push({ dir, explicit });
+  const add = (dir) => {
+    if (dir && existsSync(dir) && !out.some((c) => c.dir === dir)) out.push({ dir });
   };
-  add(env.NOBLECLOAK_MIGRATE_FROM, true);
+  add(env.NOBLECLOAK_MIGRATE_FROM);
   add(join(pluginRoot, '.local'));
   return out;
 }
@@ -292,9 +284,9 @@ function legacyCandidates({ env, pluginRoot }) {
  * after a migration is not undone by a sign-in left in another candidate).
  *
  * Candidates, in order: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`.
- * Exactly one is migrated: the explicit `NOBLECLOAK_MIGRATE_FROM` when it holds
- * an `auth.json`, otherwise the candidate whose `auth.json` is newest. Files in a candidate that
- * was not chosen are left alone and named in the message; so are files whose
+ * Exactly one is migrated: `NOBLECLOAK_MIGRATE_FROM` when it holds an
+ * `auth.json`, otherwise `<pluginRoot>/.local`. Files in a candidate that was
+ * not chosen are left alone and named in the message; so are files whose
  * destination already exists. The old directory is never deleted.
  *
  * Returns `{ status, source, moved, leftBehind, message }`; `message` is the one
@@ -318,9 +310,7 @@ export function migrateLegacyState({ env = process.env, pluginRoot = PLUGIN_ROOT
   const candidates = legacyCandidates({ env, pluginRoot }).filter((c) => c.dir !== dest);
   if (candidates.length === 0) return { status: 'none', source: null, moved: [], leftBehind: [], message: null };
 
-  const withAuth = candidates
-    .map((c) => ({ ...c, authMtime: mtimeMs(join(c.dir, 'auth.json')) }))
-    .filter((c) => c.authMtime !== null);
+  const withAuth = candidates.filter((c) => existsSync(join(c.dir, 'auth.json')));
   const stateFilesIn = (dir) => MIGRATED_STATE_FILES.filter((f) => existsSync(join(dir, f)));
   const describe = (c) => `${c.dir} (${stateFilesIn(c.dir).join(', ') || 'no state files'})`;
   if (withAuth.length === 0) {
@@ -337,7 +327,8 @@ export function migrateLegacyState({ env = process.env, pluginRoot = PLUGIN_ROOT
         `${candidates.map(describe).join('; ')}.`,
     };
   }
-  const chosen = withAuth.find((c) => c.explicit) ?? withAuth.sort((a, b) => b.authMtime - a.authMtime)[0];
+  // legacyCandidates is in preference order: NOBLECLOAK_MIGRATE_FROM first.
+  const [chosen] = withAuth;
 
   mkdirSync(dest, { recursive: true, mode: 0o700 });
   const moved = [];
