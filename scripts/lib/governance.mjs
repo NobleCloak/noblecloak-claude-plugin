@@ -26,7 +26,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -49,13 +48,20 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //
 //   NOBLECLOAK_ISSUER          OAuth issuer / API host. Discovery doc lives at
 //                            {issuer}/.well-known/oauth-authorization-server.
-//                            Default: beta API host (Core is the OAuth 2.1 AS,
-//                            packaged inside the core API — decided 2026-05-31).
+//                            Default: the production API host,
+//                            https://api.noblecloak.com (Core is the OAuth 2.1
+//                            AS, packaged inside the core API).
 //   NOBLECLOAK_COO_URL         COO API base for governance resolve. The resolve
 //                            endpoint is {base}/v1/coo/local/resolve. Default:
-//                            beta — the COO API serves API_PREFIX=/v1/coo on
-//                            api.beta.shared.bianoble.com (its beta values and
-//                            ingress).
+//                            the same production API host, where the COO API
+//                            is served under /v1/coo.
+//   NOBLECLOAK_API_URL         Base for login's connection registration
+//                            (POST {base}/mcp/connections). Default: the
+//                            issuer above (NOBLECLOAK_ISSUER or its default).
+//   The hooks and scripts use another deployment (a non-production one
+//   included) when these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE are
+//   set (NOBLECLOAK_API_URL follows NOBLECLOAK_ISSUER unless set); Claude Code's
+//   own MCP connection reads the committed .mcp.json.
 //   NOBLECLOAK_LOCAL_ENFORCE   'true'/'1' flips the PreToolUse adapter from
 //                            audit-only (default) to enforce mode.
 //   NOBLECLOAK_DEV_TOKEN       DEV-ONLY bearer-token override while Core OAuth AS
@@ -72,12 +78,21 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            (epic brief #7) — when present the plugin hook
 //                            no-ops to avoid double-fire (spike Q3 finding).
 
-export const DEFAULT_ISSUER = 'https://api.beta.shared.bianoble.com';
-export const DEFAULT_COO_URL = 'https://api.beta.shared.bianoble.com';
+export const DEFAULT_ISSUER = 'https://api.noblecloak.com';
+export const DEFAULT_COO_URL = 'https://api.noblecloak.com';
 export const DEFAULT_RESOLVE_TIMEOUT_MS = 1500;
 export const RESOLVE_PATH = '/v1/coo/local/resolve';
 /** Audit-event ingest endpoint (brief #5 emitter; brief #3 owns the route). */
 export const EVENTS_PATH = '/v1/coo/local/events';
+/**
+ * Printed by /noblecloak-login before it opens the browser. The deployment
+ * provisions a person who signs in for the first time in the same OAuth flow: a
+ * user and, when the identity provider supplies a name (the usual case), a
+ * personal workspace with the sign-up entitlements. There is no separate
+ * registration page.
+ */
+export const FIRST_SIGN_IN_NOTE =
+  'If you do not have a NobleCloak account yet, signing in creates one, with a personal workspace.';
 
 export function issuerBaseUrl(env = process.env) {
   return stripTrailingSlash(env.NOBLECLOAK_ISSUER || DEFAULT_ISSUER);
@@ -195,9 +210,9 @@ export function ensureStateDir(env = process.env) {
   return dir;
 }
 
-// ── One-time migration from the pre-rename state locations ────────────────
+// ── One-time migration from an earlier state location ─────────────────────
 //
-// Before the rename the state lived in `<PLUGIN_ROOT>/.local` (a directory-source
+// Earlier versions kept the state in `<PLUGIN_ROOT>/.local` (a directory-source
 // install: the source checkout; a marketplace install: the versioned cache
 // directory). Files moved from there; lock files stay (they belong to a live
 // process).
@@ -220,14 +235,6 @@ export const MIGRATED_STATE_FILES = Object.freeze([
 ]);
 
 export const MIGRATION_MARKER = 'migrated-from';
-
-function mtimeMs(file) {
-  try {
-    return statSync(file).mtimeMs;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Moves one file to mode 0600. Across filesystems (EXDEV) the content is written
@@ -258,22 +265,14 @@ function moveStateFile(from, to) {
   chmodSync(to, 0o600);
 }
 
-/** Pre-rename state directories that exist, in the brief's order, de-duplicated. */
-function legacyCandidates({ env, pluginRoot, home }) {
+/** Earlier state directories that exist: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`, de-duplicated. */
+function legacyCandidates({ env, pluginRoot }) {
   const out = [];
-  const add = (dir, explicit = false) => {
-    if (dir && existsSync(dir) && !out.some((c) => c.dir === dir)) out.push({ dir, explicit });
+  const add = (dir) => {
+    if (dir && existsSync(dir) && !out.some((c) => c.dir === dir)) out.push({ dir });
   };
-  add(env.NOBLECLOAK_MIGRATE_FROM, true);
+  add(env.NOBLECLOAK_MIGRATE_FROM);
   add(join(pluginRoot, '.local'));
-  const cacheRoot = join(home, '.claude', 'plugins', 'cache', 'bianoble', 'bianoble');
-  let versions = [];
-  try {
-    versions = readdirSync(cacheRoot).sort();
-  } catch {
-    // no marketplace cache
-  }
-  for (const version of versions) add(join(cacheRoot, version, '.local'));
   return out;
 }
 
@@ -284,11 +283,10 @@ function legacyCandidates({ env, pluginRoot, home }) {
  * holds the `migrated-from` marker of an earlier migration (so logging out
  * after a migration is not undone by a sign-in left in another candidate).
  *
- * Candidates, in order: `NOBLECLOAK_MIGRATE_FROM`, `<pluginRoot>/.local`, then
- * `~/.claude/plugins/cache/bianoble/bianoble/<version>/.local`. Exactly one is
- * migrated: the explicit `NOBLECLOAK_MIGRATE_FROM` when it holds an `auth.json`,
- * otherwise the candidate whose `auth.json` is newest. Files in a candidate that
- * was not chosen are left alone and named in the message; so are files whose
+ * Candidates, in order: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`.
+ * Exactly one is migrated: `NOBLECLOAK_MIGRATE_FROM` when it holds an
+ * `auth.json`, otherwise `<pluginRoot>/.local`. Files in a candidate that was
+ * not chosen are left alone and named in the message; so are files whose
  * destination already exists. The old directory is never deleted.
  *
  * Returns `{ status, source, moved, leftBehind, message }`; `message` is the one
@@ -309,12 +307,10 @@ export function migrateLegacyState({ env = process.env, pluginRoot = PLUGIN_ROOT
   if (existsSync(join(dest, MIGRATION_MARKER))) {
     return { status: 'done', source: null, moved: [], leftBehind: [], message: null };
   }
-  const candidates = legacyCandidates({ env, pluginRoot, home }).filter((c) => c.dir !== dest);
+  const candidates = legacyCandidates({ env, pluginRoot }).filter((c) => c.dir !== dest);
   if (candidates.length === 0) return { status: 'none', source: null, moved: [], leftBehind: [], message: null };
 
-  const withAuth = candidates
-    .map((c) => ({ ...c, authMtime: mtimeMs(join(c.dir, 'auth.json')) }))
-    .filter((c) => c.authMtime !== null);
+  const withAuth = candidates.filter((c) => existsSync(join(c.dir, 'auth.json')));
   const stateFilesIn = (dir) => MIGRATED_STATE_FILES.filter((f) => existsSync(join(dir, f)));
   const describe = (c) => `${c.dir} (${stateFilesIn(c.dir).join(', ') || 'no state files'})`;
   if (withAuth.length === 0) {
@@ -331,7 +327,8 @@ export function migrateLegacyState({ env = process.env, pluginRoot = PLUGIN_ROOT
         `${candidates.map(describe).join('; ')}.`,
     };
   }
-  const chosen = withAuth.find((c) => c.explicit) ?? withAuth.sort((a, b) => b.authMtime - a.authMtime)[0];
+  // legacyCandidates is in preference order: NOBLECLOAK_MIGRATE_FROM first.
+  const [chosen] = withAuth;
 
   mkdirSync(dest, { recursive: true, mode: 0o700 });
   const moved = [];
@@ -389,7 +386,7 @@ let lazyMigrationTried = false;
 
 /**
  * A hook can run before the first SessionStart refresh of a session that
- * predates the rename; without this it would see an empty state directory and
+ * predates the state directory move; without this it would see an empty state directory and
  * report "not logged in". Tries the migration once per process, silently apart
  * from its one-line message on stderr.
  */
@@ -404,7 +401,11 @@ function migrateOnceIfDefaultDir(env) {
   }
 }
 
-export function loadAuthState(env = process.env) {
+/**
+ * The sign-in saved in auth.json, as JSON, or null. Unlike `loadAuthState` it
+ * does not check which deployment the sign-in belongs to.
+ */
+export function readAuthFile(env = process.env) {
   const file = authFilePath(env);
   if (!existsSync(file)) {
     migrateOnceIfDefaultDir(env);
@@ -415,6 +416,26 @@ export function loadAuthState(env = process.env) {
   } catch {
     return null;
   }
+}
+
+/**
+ * True when a saved sign-in was made against the issuer configured now:
+ * `auth.issuer` (written by /noblecloak-login) equals `issuerBaseUrl(env)`.
+ * A file with no `issuer` (written by plugin 0.1.x, whose default was the beta
+ * deployment) counts as another deployment.
+ */
+export function authStateMatchesIssuer(auth, env = process.env) {
+  return typeof auth?.issuer === 'string' && stripTrailingSlash(auth.issuer) === issuerBaseUrl(env);
+}
+
+/**
+ * The saved sign-in, or null when there is none or it belongs to another
+ * deployment (see `authStateMatchesIssuer`), so a token from one deployment is
+ * never sent to, or refreshed at, another. /noblecloak-login replaces it.
+ */
+export function loadAuthState(env = process.env) {
+  const auth = readAuthFile(env);
+  return auth && authStateMatchesIssuer(auth, env) ? auth : null;
 }
 
 /**
@@ -521,18 +542,15 @@ export function resolveResourceIndicator(env = process.env) {
 /**
  * The approvals module's default URL for a govern origin. The shell serves the
  * approvals module at `/approvals` (D-A87; the `govern` name belongs to the API
- * host), so the beta govern origin (`https://govern.beta.shared.bianoble.com`)
- * maps to `https://shell.beta.shared.bianoble.com/approvals`. Any other origin
- * (or null) has no known shell host: returns `null`, and the caller prints the
- * generic sentence. `NOBLECLOAK_APPROVALS_URL` overrides this at the call site.
+ * host), so the production govern origin (`https://govern.noblecloak.com`)
+ * maps to `https://app.noblecloak.com/approvals`. Any other origin (or null)
+ * has no known shell host: returns `null`, and the caller prints the generic
+ * sentence. `NOBLECLOAK_APPROVALS_URL` overrides this at the call site.
  */
-// A literal map, as briefed; display-only (no trust decision), so a miss fails
-// safe to the generic sentence. Brand-flip checklist: add the noblecloak govern
-// origin (https://govern.noblecloak.com, announced for the beta deployment)
-// here, or derive govern.<x> -> shell.<x>/approvals once
-// every deployment's shell hosts the approvals module.
+// A literal map: display-only (no trust decision), so a miss fails safe to the
+// generic sentence.
 const APPROVALS_URL_BY_GOVERN_ORIGIN = new Map([
-  ['https://govern.beta.shared.bianoble.com', 'https://shell.beta.shared.bianoble.com/approvals'],
+  ['https://govern.noblecloak.com', 'https://app.noblecloak.com/approvals'],
 ]);
 
 export function defaultApprovalsUrl(governOrigin) {
@@ -551,8 +569,8 @@ export function approvalsUrl(env, governOrigin) {
  * The RFC 8707 resource indicator for the govern module API (the audience of
  * the second user token). `NOBLECLOAK_GOVERN_URL` overrides; otherwise it is
  * derived from the gateway origin in .mcp.json by swapping the leading `mcp.`
- * label for `govern.` (`https://mcp.beta.shared.bianoble.com` →
- * `https://govern.beta.shared.bianoble.com`). Returns a bare origin, or `null`
+ * label for `govern.` (`https://mcp.noblecloak.com` →
+ * `https://govern.noblecloak.com`). Returns a bare origin, or `null`
  * (never throws) when neither source yields one — including a gateway host that
  * does not start with `mcp.`, where guessing would mint a token for the wrong
  * audience.
@@ -792,9 +810,9 @@ function parseProbeBody(text) {
 
 // ── OAuth discovery + refresh (D4 — ISSUER-IS-API-HOST re-point) ──────────
 //
-// The authorization server is NOT auth.bianoble.com (NXDOMAIN). Per the Core
-// OAuth AS decision (2026-05-31), Core is the OAuth 2.1 AS packaged under the
-// per-env API host; endpoints are discovered via RFC 8414:
+// The issuer the plugin is configured with is the API host. Core is the OAuth
+// 2.1 AS packaged under that host; endpoints are discovered via RFC 8414 (the
+// discovery document may name a different host for them):
 //   GET {issuer}/.well-known/oauth-authorization-server
 // and the token endpoint comes from the discovery doc (lands on
 // /auth/oauth/token once AS Stage 4 ships).
@@ -860,7 +878,8 @@ export function clientId(env = process.env) {
 // The AS issues OAuth client_ids via DCR (it does NOT honour a caller-chosen
 // id), so the plugin registers a public + PKCE client on first login and
 // persists the generated id in <state dir>/client.json, keyed by redirect_uri (the
-// AS binds an issued code to the exact redirect_uri its client registered).
+// AS binds an issued code to the exact redirect_uri its client registered) and by
+// the registration endpoint (another AS does not know the id).
 // `clientId()` above stays a stable LABEL for the governance resolve payload;
 // the OAuth client_id is this dynamically-registered value.
 
@@ -934,16 +953,29 @@ export async function registerOAuthClient({ registrationEndpoint, redirectUri, t
 }
 
 /**
+ * True when a persisted client (client.json) was registered at
+ * `registrationEndpoint`. A client.json with no `registrationEndpoint`
+ * (written by plugin 0.1.x, whose default was the beta deployment) counts as
+ * registered elsewhere.
+ */
+export function clientRegisteredAt(persisted, registrationEndpoint) {
+  return Boolean(registrationEndpoint) && persisted?.registrationEndpoint === registrationEndpoint;
+}
+
+/**
  * Resolve the OAuth client_id to authorize with, registering once if needed:
  *   1. NOBLECLOAK_CLIENT_ID env override (a pre-registered client) wins.
- *   2. A persisted client_id for the SAME redirect_uri is reused.
- *   3. Otherwise register via DCR and persist (keyed by redirect_uri).
+ *   2. A persisted client_id for the SAME redirect_uri AND the same
+ *      registration endpoint is reused (another authorization server does not
+ *      know that client_id).
+ *   3. Otherwise register via DCR and persist (with the redirect_uri and the
+ *      registration endpoint).
  */
 export async function ensureRegisteredClientId({ registrationEndpoint, redirectUri, env = process.env } = {}) {
   if (env.NOBLECLOAK_CLIENT_ID) return env.NOBLECLOAK_CLIENT_ID;
 
   const persisted = loadRegisteredClient(env);
-  if (persisted?.clientId && persisted.redirectUri === redirectUri) {
+  if (persisted?.clientId && persisted.redirectUri === redirectUri && clientRegisteredAt(persisted, registrationEndpoint)) {
     return persisted.clientId;
   }
 
@@ -956,7 +988,10 @@ export async function ensureRegisteredClientId({ registrationEndpoint, redirectU
   }
 
   const newClientId = await registerOAuthClient({ registrationEndpoint, redirectUri });
-  saveRegisteredClient({ clientId: newClientId, redirectUri, registeredAt: new Date().toISOString() }, env);
+  saveRegisteredClient(
+    { clientId: newClientId, redirectUri, registrationEndpoint, registeredAt: new Date().toISOString() },
+    env
+  );
   return newClientId;
 }
 
@@ -1853,16 +1888,6 @@ export function isNobleCloakMcpTool(toolName, env = process.env) {
   return FALLBACK_NOBLECLOAK_SERVER_IDS.includes(serverId);
 }
 
-/**
- * Names (sorted, never values) of `BIANOBLE_*` variables set in `env`. The plugin
- * reads `NOBLECLOAK_*` only, so these have no effect; /noblecloak-status lists them.
- */
-export function legacyEnvVarNames(env = process.env) {
-  return Object.keys(env)
-    .filter((name) => name.startsWith('BIANOBLE_'))
-    .sort();
-}
-
 /** Offline side-effect level for fail-mode selection (see mirror note above). */
 export function offlineSideEffectLevel(toolRef) {
   if (!toolRef) return UNKNOWN_TOOL_SIDE_EFFECT;
@@ -2138,7 +2163,11 @@ export function failModeDecision(sideEffectLevel, enforce) {
 //     stays eligible for re-ship on the next drain after COO recovers, because
 //     the worker marks a tool_use_id shipped only on EMIT_DELIVERED.
 
-/** local_execution provenance marker — greppable per brief #3 D2. */
+// The deployment's event contract: its /v1/coo/local/events route rejects a
+// CloudEvents source or type outside its allow-lists (400 unknown_ce_source /
+// unknown_ce_type), and these are the values it lists for this plugin. They
+// change only together with the deployment, which must accept a new value
+// before the plugin sends it.
 export const CE_SOURCE_LOCAL_EXECUTION = 'bianoble/local-execution/claude-code';
 export const CE_TYPE_TOOL_CALL_AUTHORIZED = 'com.bianoble.tool.call.authorized.v1';
 export const CE_TYPE_TOOL_CALL_DENIED = 'com.bianoble.tool.call.denied.v1';

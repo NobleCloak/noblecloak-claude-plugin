@@ -13,6 +13,7 @@ import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
 import {
   AuthDiscoveryError,
+  clientRegisteredAt,
   decodeJwtClaims,
   discoverAuthServer,
   ensureRegisteredClientId,
@@ -55,6 +56,13 @@ export async function authorizeForResource({ resource, env = process.env, log = 
   if (persisted?.clientId && persisted.redirectUri !== redirectUri) {
     throw new SignInError(
       `the registered OAuth client uses ${persisted.redirectUri}, not ${redirectUri} — unset NOBLECLOAK_REDIRECT_PORT, or run /noblecloak-login first`
+    );
+  }
+  // A client registered at another authorization server (or by plugin 0.1.x,
+  // which did not record where): only /noblecloak-login replaces it.
+  if (persisted?.clientId && !clientRegisteredAt(persisted, doc.registration_endpoint)) {
+    throw new SignInError(
+      'the registered OAuth client belongs to another authorization server — run /noblecloak-login first'
     );
   }
   const clientId = await ensureRegisteredClientId({

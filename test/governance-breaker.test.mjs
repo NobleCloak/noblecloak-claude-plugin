@@ -557,7 +557,7 @@ test('401 on emit: spilled (kept), counts toward the breaker, refresh attempted;
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ accessToken: 'revoked', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
+  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ issuer: stub.url, accessToken: 'revoked', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
   const e = env(dir, { NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url });
   assert.equal(await emitAuditEvent({ id: 'u:pre', subject: 's' }, e), EMIT_SPILLED);
   assert.equal(readBreakerFile(dir).failures, 1, 'a refused token counts toward the breaker (as before this change)');
@@ -588,7 +588,7 @@ test('COO keeps refusing fresh tokens (401) while refresh succeeds: POSTs stop a
   t.after(() => stub.close());
   stub.eventStatus = 401;
   const dir = makeStateDir();
-  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ accessToken: 'first', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
+  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ issuer: stub.url, accessToken: 'first', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
   const e = env(dir, { NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url });
   for (let i = 0; i < 20; i += 1) assert.equal(await emitAuditEvent({ id: `s${i}:pre`, subject: 's' }, e), EMIT_SPILLED);
   assert.ok(stub.eventRequests().length <= AUDIT_BREAKER_THRESHOLD, `posts=${stub.eventRequests().length}`);
@@ -602,7 +602,7 @@ test('a once-revoked token: 401 → refresh → the next emit delivers and the b
   t.after(() => stub.close());
   stub.eventStatus = 401;
   const dir = makeStateDir();
-  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ accessToken: 'revoked', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
+  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ issuer: stub.url, accessToken: 'revoked', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
   const e = env(dir, { NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url });
   assert.equal(await emitAuditEvent({ id: 'a:pre', subject: 's' }, e), EMIT_SPILLED);
   stub.eventStatus = 200;
@@ -617,7 +617,7 @@ test('401 while the refresh fails transiently: the backoff holds the grant count
   stub.eventStatus = 401;
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ accessToken: 'tok', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
+  writeFileSync(join(dir, 'auth.json'), JSON.stringify({ issuer: stub.url, accessToken: 'tok', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
   const e = env(dir, { NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_AUDIT_BREAKER_THRESHOLD: '100' });
   for (let i = 0; i < 10; i += 1) await emitAuditEvent({ id: `t${i}:pre`, subject: 's' }, e);
   assert.equal(stub.requests.filter((r) => r.path === '/auth/oauth/token').length, 1);

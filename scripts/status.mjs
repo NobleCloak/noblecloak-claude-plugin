@@ -31,9 +31,9 @@ import {
   cooBaseUrl,
   isEnforceMode,
   issuerBaseUrl,
-  legacyEnvVarNames,
   loadAuthState,
   loadMcpConfig,
+  readAuthFile,
   localAuditStatus,
   migrateLegacyState,
   readMigrationMarker,
@@ -118,17 +118,15 @@ if (migratedFrom && !migrationMessage) console.log(`State migrated from ${migrat
 console.log(`Issuer: ${issuerBaseUrl()} (discovery: /.well-known/oauth-authorization-server)`);
 console.log(`Governance: COO ${cooBaseUrl()} — ${isEnforceMode() ? 'ENFORCE' : 'audit-only'} mode`);
 
-const legacyVars = legacyEnvVarNames();
-if (legacyVars.length > 0) {
-  console.log(
-    `Warning: ${legacyVars.join(', ')} ${legacyVars.length === 1 ? 'is' : 'are'} set but ` +
-      `${legacyVars.length === 1 ? 'has' : 'have'} no effect. The plugin reads NOBLECLOAK_* variables only; ` +
-      'rename each BIANOBLE_ prefix to NOBLECLOAK_.'
-  );
-}
-
 if (!auth) {
   console.log('Status: Not connected');
+  // loadAuthState ignores a sign-in made against another deployment; say so.
+  const saved = readAuthFile();
+  if (saved) {
+    console.log(
+      `The saved sign-in belongs to ${saved.issuer ?? 'another deployment (saved by plugin 0.1.x)'}, not ${issuerBaseUrl()}; it is not used.`
+    );
+  }
   console.log('Run /noblecloak-login to connect your NobleCloak workspace.');
   printLocalAudit();
   process.exit(0);

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { DEFAULT_ISSUER } from '../scripts/lib/governance.mjs';
 import { makeStateDir, runScript, startStub, REFRESH_PATH, REPO_ROOT } from './helpers.mjs';
 
 function refreshEnv(stub, dir, extra = {}) {
@@ -40,7 +41,7 @@ function seedAuth(dir, overrides = {}) {
 test('valid (non-expiring) token → no-op: no token grant, no config fetch, .mcp.json untouched', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -54,7 +55,7 @@ test('valid (non-expiring) token → no-op: no token grant, no config fetch, .mc
 test('expired token → grant fired, Token refreshed log, auth.json updated, .mcp.json NOT written', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -74,7 +75,7 @@ test('grant rejected (invalid_grant) → exit 0, re-login advice, .mcp.json unto
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   const mcpFile = join(dir, 'mcp.json');
   const preexisting = JSON.stringify({ mcpServers: { noblecloak: { url: 'x', headers: { Authorization: 'Bearer old' } } } });
   writeFileSync(mcpFile, preexisting);
@@ -94,7 +95,7 @@ test('transient token-endpoint failure (503) → exit 0, NO re-login advice', as
   const stub = await startStub();
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -109,7 +110,7 @@ test('discovery doc without token_endpoint → exit 0, stderr does NOT suggest r
   const stub = await startStub();
   stub.discoveryDoc = { issuer: 'x', authorization_endpoint: 'y' }; // Stage 4 pending
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -150,7 +151,7 @@ test('not logged in + NOBLECLOAK_AUTO_LOGIN=1 → CTA on stdout plus stderr esca
 test('expired token + no refresh token → re-login advice, no token grant', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000, refreshToken: null });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000, refreshToken: null });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -180,7 +181,7 @@ test('SessionStart: rejected grant → user-visible systemMessage naming /noblec
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -197,7 +198,7 @@ test('SessionStart: rejected grant → user-visible systemMessage naming /noblec
 test('SessionStart: expired + no refresh token → visible message + marker', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000, refreshToken: null });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000, refreshToken: null });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.match(hookJson(result).systemMessage, /noblecloak-login/);
@@ -210,7 +211,7 @@ test('SessionStart: expired + no refresh token → visible message + marker', as
 test('SessionStart: still-valid token inside the refresh buffer + no refresh token → NOT signed out; soft visible heads-up', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() + 2 * 60 * 1000, refreshToken: null }); // 2 min left (< 5 min buffer, > 30s skew)
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() + 2 * 60 * 1000, refreshToken: null }); // 2 min left (< 5 min buffer, > 30s skew)
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     assert.equal(result.code, 0);
@@ -229,7 +230,7 @@ test('SessionStart: transient failure → softer visible line, no re-login advic
   const stub = await startStub();
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
     const out = hookJson(result);
@@ -245,7 +246,7 @@ test('SessionStart: discovery failure → softer visible line, no marker', async
   const stub = await startStub();
   stub.discoveryDoc = { issuer: 'x', authorization_endpoint: 'y' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     const out = hookJson(await runScript(REFRESH_PATH, refreshEnv(stub, dir)));
     assert.match(out.systemMessage, /couldn't refresh/);
@@ -258,7 +259,7 @@ test('SessionStart: discovery failure → softer visible line, no marker', async
 test('SessionStart: a marker always re-tries (even with a still-valid token); success clears it, "refreshed" goes to context only', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir); // token valid for an hour
+  seedAuth(dir, { issuer: stub.url }); // token valid for an hour
   writeFileSync(marker(dir), JSON.stringify({ since: 'x', reason: 'invalid_grant', checkedAt: Date.now() }));
   try {
     const result = await runScript(REFRESH_PATH, refreshEnv(stub, dir));
@@ -278,7 +279,7 @@ test('SessionStart: a signed-out message shown here is not repeated by the PreTo
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 1000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 1000 });
   try {
     await runScript(REFRESH_PATH, refreshEnv(stub, dir, { CLAUDE_CODE_SESSION_ID: 'sess-1' }));
     const { takeNotices } = await import('../scripts/lib/governance.mjs');
@@ -294,7 +295,7 @@ test('SessionStart: a signed-out message shown here is not repeated by the PreTo
 
 test('logout clears the signed-out marker', async () => {
   const dir = makeStateDir();
-  seedAuth(dir);
+  seedAuth(dir, { issuer: DEFAULT_ISSUER });
   writeFileSync(marker(dir), JSON.stringify({ since: 'x', reason: 'y', checkedAt: Date.now() }));
   const result = await runScript(join(REPO_ROOT, 'scripts', 'logout.mjs'), { NOBLECLOAK_STATE_DIR: dir });
   assert.equal(result.code, 0);

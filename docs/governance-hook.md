@@ -42,8 +42,8 @@ and audited like any other MCP tool.
 whenever `.mcp.json` lists a server named `noblecloak`. Once the plugin ships that server,
 Claude Code names its tools `mcp__plugin_noblecloak_noblecloak__*`, so a plain-form name can
 only come from a server configured independently (user, project or local scope) under the
-name `noblecloak`; in ENFORCE mode such a server skips resolve and the pre-audit record. The
-same holds for `bianoble` before the rename. Restricting the skip to the plugin-prefixed form
+name `noblecloak`; in ENFORCE mode such a server skips resolve and the pre-audit record.
+Restricting the skip to the plugin-prefixed form
 is a product decision and is not made here.
 
 ## Privacy: raw tool input never leaves the machine
@@ -91,11 +91,12 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | Env var | Default | Purpose |
 |---|---|---|
 | `NOBLECLOAK_LOCAL_ENFORCE` | `false` (audit-only) | Flip to `true` to enforce server decisions |
-| `NOBLECLOAK_COO_URL` | `https://api.beta.shared.bianoble.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
-| `NOBLECLOAK_ISSUER` | `https://api.beta.shared.bianoble.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
+| `NOBLECLOAK_COO_URL` | `https://api.noblecloak.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
+| `NOBLECLOAK_ISSUER` | `https://api.noblecloak.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
+| `NOBLECLOAK_API_URL` | the issuer (`NOBLECLOAK_ISSUER` or its default) | Base for `/noblecloak-login`'s connection registration, `POST {base}/mcp/connections` |
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
-| `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over the default candidates when it holds an `auth.json`; see README "State" |
+| `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
 | `NOBLECLOAK_SDK_HOOK_ACTIVE` | unset | Set by the future Agent SDK adapter; the plugin hook no-ops to avoid double-fire |
 | `NOBLECLOAK_SIGNED_OUT_RECHECK_MS` | `900000` (15 min) | How often a signed-out plugin re-tries its refresh grant |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_RETENTION` | `2000` | Max unshipped Pre records kept in the audit queue (newest kept) |
@@ -146,6 +147,11 @@ Refresh is single-flight across concurrent hook processes (an exclusive lockfile
 state dir; waiters re-read and adopt the winner's tokens) and `auth.json` is written
 atomically (temp file + rename), so parallel tool calls hitting a 401 storm can't burn a
 rotated refresh token or tear the file.
+A sign-in is used only against the issuer it was made at: `auth.json` records `issuer`
+(the `NOBLECLOAK_ISSUER` base at sign-in), and a file whose `issuer` differs from the current one,
+or has none (plugin 0.1.x), reads as signed out, so its tokens are neither sent to COO nor
+refreshed. `client.json` records `registrationEndpoint`; `/noblecloak-login` reuses the client
+only when it matches the discovered `registration_endpoint`, and registers again otherwise.
 Token refresh goes through RFC 8414 discovery on `NOBLECLOAK_ISSUER` — the token endpoint comes
 from the discovery doc. **Core OAuth AS Stage 4 has shipped** (verified 2026-08-13: the beta
 discovery document serves `authorization_endpoint`, `token_endpoint`, `registration_endpoint`

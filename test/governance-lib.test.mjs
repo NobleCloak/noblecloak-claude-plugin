@@ -105,12 +105,12 @@ test('isNobleCloakMcpTool (no .mcp.json): exact fallback server ids only', () =>
 
 test('isNobleCloakMcpTool: installed-plugin form mcp__plugin_noblecloak_<server>__ matches the same ids', () => {
   const absent = { NOBLECLOAK_MCP_FILE: join(makeStateDir(), 'mcp.json') };
-  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__bianoble_read', absent), true);
+  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__search_records', absent), true);
   assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_github__create_issue', absent), false);
   const env = { NOBLECLOAK_MCP_FILE: join(makeStateDir(), 'mcp.json') };
   writeFileSync(env.NOBLECLOAK_MCP_FILE, JSON.stringify({ mcpServers: { noblecloak: { type: 'http', url: 'https://x.test/mcp' } } }));
-  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__bianoble_read', env), true);
-  assert.equal(isNobleCloakMcpTool('mcp__noblecloak__bianoble_read', env), true);
+  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__search_records', env), true);
+  assert.equal(isNobleCloakMcpTool('mcp__noblecloak__search_records', env), true);
 });
 
 test('the plugin id used for the mcp__plugin_<id>_ prefix is the name in plugin.json', () => {
@@ -412,7 +412,7 @@ test('corrupted auth.json degrades to null / no-token instead of throwing', () =
 test('NOBLECLOAK_DEV_TOKEN takes precedence over a populated auth.json', () => {
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir };
-  saveAuthState({ accessToken: 'file-token', refreshToken: 'file-refresh', expiresAt: Date.now() + 3600_000 }, env);
+  saveAuthState({ issuer: issuerBaseUrl(env), accessToken: 'file-token', refreshToken: 'file-refresh', expiresAt: Date.now() + 3600_000 }, env);
   const fromFile = getBearerToken(env);
   assert.deepEqual(fromFile, { token: 'file-token', source: 'auth-file', refreshToken: 'file-refresh' });
   const fromDev = getBearerToken({ ...env, NOBLECLOAK_DEV_TOKEN: 'dev-token' });
@@ -924,7 +924,7 @@ test('emitAuditEvent: no bearer token → spills and returns EMIT_SPILLED, no fe
   // No NOBLECLOAK_DEV_TOKEN and no auth.json → getBearerToken returns null. The
   // function must spill WITHOUT attempting a POST (logged-out audit path).
   const env = { NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_COO_URL: 'http://127.0.0.1:0' };
-  const envelope = { id: 'toolu_X:pre', type: 'com.bianoble.tool.call.authorized.v1' };
+  const envelope = { id: 'toolu_X:pre', type: CE_TYPE_TOOL_CALL_AUTHORIZED };
   const status = await emitAuditEvent(envelope, env);
   assert.equal(status, EMIT_SPILLED, 'returns EMIT_SPILLED on the no-token branch');
   const spill = readFileSync(join(stateDir, 'audit-spill.jsonl'), 'utf-8').trim();
@@ -1246,7 +1246,7 @@ test('recordWorkerDegraded: NEVER throws even when the state dir is unwritable (
 // The plugin's /authorize call omitted the `resource` parameter entirely, so
 // core's AS silently defaulted the bound audience
 // (`audience: code.resource ?? deps.resourceId`). The minted token therefore
-// LOOKED correctly bound (`aud: https://mcp.beta…`, no `resource` claim) while
+// LOOKED correctly bound (`aud: https://mcp.<host>`, no `resource` claim) while
 // the request was non-conformant — invisible to every resource-server-side log.
 // Under AS_ENFORCE_RESOURCE_INDICATOR=true that request is rejected outright
 // with `invalid_target`, which would break /noblecloak-login.
@@ -1260,10 +1260,10 @@ test('resolveResourceIndicator derives the MCP server ORIGIN from .mcp.json (dro
   writeFileSync(
     env.NOBLECLOAK_MCP_FILE,
     JSON.stringify({
-      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.beta.shared.bianoble.com/v1/mcp' } },
+      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.noblecloak.com/v1/mcp' } },
     })
   );
-  assert.equal(resolveResourceIndicator(env), 'https://mcp.beta.shared.bianoble.com');
+  assert.equal(resolveResourceIndicator(env), 'https://mcp.noblecloak.com');
 });
 
 test('resolveResourceIndicator honours an explicit NOBLECLOAK_MCP_RESOURCE override', () => {
@@ -1274,7 +1274,7 @@ test('resolveResourceIndicator honours an explicit NOBLECLOAK_MCP_RESOURCE overr
   writeFileSync(
     env.NOBLECLOAK_MCP_FILE,
     JSON.stringify({
-      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.beta.shared.bianoble.com/v1/mcp' } },
+      mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } },
     })
   );
   assert.equal(resolveResourceIndicator(env), 'https://mcp.example.test');

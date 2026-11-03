@@ -30,7 +30,7 @@ Run `/noblecloak-status` to see:
 - **Token expired?** The plugin auto-refreshes the governance session on session start; you can run `/noblecloak-connect` to force a governance-token refresh. (This does not re-fetch MCP config — there isn't any; MCP reconnect is via `/mcp`.)
 - **Wrong organization?** The AS binds your session to your default org automatically. Change the default org in the NobleCloak shell, then run `/noblecloak-login` AND reconnect the MCP server from `/mcp` (two separate tokens — both must re-mint).
 - **Want to disconnect?** Run `/noblecloak-logout` to clear your governance session. Claude Code owns the MCP connection — disconnect the `noblecloak` server from `/mcp` to drop it.
-- **Integration tool says "not connected"?** The user needs to connect the service at app.beta.shared.bianoble.com/setup (Integrations step). Once connected, tools work automatically on next session.
+- **Integration tool says "not connected"?** The user needs to connect the service in the NobleCloak app's settings. Once connected, tools work automatically on next session.
 
 ### The Two Tokens (why /noblecloak-status labels the org "hooks token")
 The plugin holds TWO independently minted tokens from the same authorization server:

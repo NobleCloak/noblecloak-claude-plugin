@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  DEFAULT_ISSUER,
   MIGRATED_STATE_FILES,
   MIGRATION_MARKER,
   defaultStateDir,
@@ -48,10 +49,6 @@ function writeState(dir, files, { mtimeSec = null } = {}) {
     writeFileSync(file, body, { mode: 0o644 }); // deliberately NOT 0600
     if (mtimeSec !== null && name === 'auth.json') utimesSync(file, mtimeSec, mtimeSec);
   }
-}
-
-function cacheDir(home, version) {
-  return join(home, '.claude', 'plugins', 'cache', 'bianoble', 'bianoble', version, '.local');
 }
 
 const mode = (file) => statSync(file).mode & 0o777;
@@ -112,32 +109,20 @@ test('is idempotent: a second run is a no-op and does not touch the moved files'
   assert.equal(readFileSync(join(pluginRoot, '.local', 'auth.json'), 'utf-8'), '{"v":2}');
 });
 
-test('migrates exactly one candidate: the newest auth.json; others are left alone and named', () => {
-  const { home, pluginRoot, dest } = scratch();
+test('migrates exactly one candidate: the one holding an auth.json; others are left alone and named', () => {
+  const { root, home, pluginRoot, dest } = scratch();
   const checkout = join(pluginRoot, '.local');
-  const cacheOld = cacheDir(home, '0.0.9');
-  const cacheNew = cacheDir(home, '0.1.0');
-  writeState(checkout, { 'auth.json': 'checkout', 'audit-queue.jsonl': 'checkout-q\n' }, { mtimeSec: 2_000_000_000 });
-  writeState(cacheOld, { 'auth.json': 'cache-old', 'audit-spill.jsonl': 'old-s\n' }, { mtimeSec: 1_000_000_000 });
-  writeState(cacheNew, { 'audit-queue.jsonl': 'stale-q\n', 'audit-spill.jsonl': 'stale-s\n' }); // no auth.json (July files)
-  const result = migrateLegacyState({ env: {}, pluginRoot, home });
+  const explicit = join(root, 'moved-checkout', '.local');
+  writeState(checkout, { 'auth.json': 'checkout', 'audit-queue.jsonl': 'checkout-q\n' });
+  writeState(explicit, { 'audit-queue.jsonl': 'stale-q\n', 'audit-spill.jsonl': 'stale-s\n' }); // no auth.json
+  const result = migrateLegacyState({ env: { NOBLECLOAK_MIGRATE_FROM: explicit }, pluginRoot, home });
   assert.equal(result.source, checkout);
   assert.equal(readFileSync(join(dest, 'auth.json'), 'utf-8'), 'checkout');
   assert.equal(readFileSync(join(dest, 'audit-queue.jsonl'), 'utf-8'), 'checkout-q\n');
-  assert.ok(!existsSync(join(dest, 'audit-spill.jsonl')), 'the other candidates\' files are not merged in');
-  assert.equal(readFileSync(join(cacheOld, 'auth.json'), 'utf-8'), 'cache-old');
-  assert.ok(existsSync(join(cacheNew, 'audit-queue.jsonl')) && existsSync(join(cacheOld, 'audit-spill.jsonl')));
-  assert.ok(result.message.includes(cacheOld) && result.message.includes(cacheNew), 'unchosen candidates are named');
+  assert.ok(!existsSync(join(dest, 'audit-spill.jsonl')), 'the other candidate\'s files are not merged in');
+  assert.ok(existsSync(join(explicit, 'audit-queue.jsonl')) && existsSync(join(explicit, 'audit-spill.jsonl')));
+  assert.ok(result.message.includes(explicit), 'the unchosen candidate is named');
   assert.match(result.message, /Left in place, not chosen/);
-});
-
-test('the newest auth.json wins even when it is in the versioned cache', () => {
-  const { home, pluginRoot, dest } = scratch();
-  writeState(join(pluginRoot, '.local'), { 'auth.json': 'checkout' }, { mtimeSec: 1_000_000_000 });
-  writeState(cacheDir(home, '0.1.0'), { 'auth.json': 'cache' }, { mtimeSec: 2_000_000_000 });
-  const result = migrateLegacyState({ env: {}, pluginRoot, home });
-  assert.equal(result.source, cacheDir(home, '0.1.0'));
-  assert.equal(readFileSync(join(dest, 'auth.json'), 'utf-8'), 'cache');
 });
 
 test('NOBLECLOAK_MIGRATE_FROM is a candidate and wins when it holds an auth.json', () => {
@@ -153,7 +138,7 @@ test('NOBLECLOAK_MIGRATE_FROM is a candidate and wins when it holds an auth.json
 
 test('no candidate has an auth.json: migrates nothing, one line lists the candidates found', () => {
   const { home, pluginRoot, dest } = scratch();
-  const stale = cacheDir(home, '0.1.0');
+  const stale = join(pluginRoot, '.local');
   writeState(stale, { 'audit-queue.jsonl': 'q\n', 'audit-spill.jsonl': 's\n' });
   const result = migrateLegacyState({ env: {}, pluginRoot, home });
   assert.equal(result.status, 'no-auth');
@@ -197,16 +182,17 @@ test('never overwrites a file already at the destination, and never moves lock f
 });
 
 test('logging out after a migration is not undone: a sign-in left in a non-chosen candidate stays put', () => {
-  const { home, pluginRoot, dest } = scratch();
-  writeState(join(pluginRoot, '.local'), { 'auth.json': '{"v":"newer"}' }, { mtimeSec: 2_000_000_000 });
-  writeState(cacheDir(home, '1.0.0'), { 'auth.json': '{"v":"older"}' }, { mtimeSec: 1_000_000_000 });
-  assert.equal(migrateLegacyState({ env: {}, pluginRoot, home }).status, 'migrated');
+  const { root, home, pluginRoot, dest } = scratch();
+  const env = { NOBLECLOAK_MIGRATE_FROM: join(root, 'moved-checkout', '.local') };
+  writeState(env.NOBLECLOAK_MIGRATE_FROM, { 'auth.json': '{"v":"explicit"}' });
+  writeState(join(pluginRoot, '.local'), { 'auth.json': '{"v":"left"}' });
+  assert.equal(migrateLegacyState({ env, pluginRoot, home }).status, 'migrated');
   unlinkSync(join(dest, 'auth.json')); // what /noblecloak-logout does
-  const again = migrateLegacyState({ env: {}, pluginRoot, home });
+  const again = migrateLegacyState({ env, pluginRoot, home });
   assert.equal(again.status, 'done');
   assert.equal(again.message, null);
   assert.ok(!existsSync(join(dest, 'auth.json')));
-  assert.equal(readFileSync(join(cacheDir(home, '1.0.0'), 'auth.json'), 'utf-8'), '{"v":"older"}');
+  assert.equal(readFileSync(join(pluginRoot, '.local', 'auth.json'), 'utf-8'), '{"v":"left"}');
 });
 
 test('wiring: /noblecloak-logout before any migration clears the old sign-in for good', async () => {
@@ -243,7 +229,7 @@ test('auth.json that cannot be moved: status failed, no marker, nothing claimed 
 
 function runNode(args, env, home) {
   return new Promise((resolve) => {
-    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(NOBLECLOAK|BIANOBLE)_/.test(k)));
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('NOBLECLOAK_')));
     const child = spawn(process.execPath, args, { env: { ...clean, HOME: home, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
@@ -257,6 +243,7 @@ function oldInstallWithAuth(root) {
   const old = join(root, 'old-checkout', '.local');
   writeState(old, {
     'auth.json': JSON.stringify({
+      issuer: DEFAULT_ISSUER,
       accessToken: 'x.y.z',
       refreshToken: 'r',
       expiresAt: Date.now() - 60_000, // expired: status skips the network probe

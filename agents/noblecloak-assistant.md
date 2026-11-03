@@ -27,7 +27,7 @@ The gateway enforces auth, governance, and confirmation gates on write operation
 - Google Calendar: `int_gcal_list_events`, `int_gcal_get_event`, `int_gcal_create_event`, `int_gcal_update_event` (writes require confirmation).
 - GitHub: `int_github_list_repos`, `int_github_list_prs`, `int_github_get_pr`, `int_github_create_pr_review` (writes require confirmation).
 
-Integration tools require the user to have connected the relevant service in their NobleCloak workspace settings. If a tool returns "integration not connected", guide them to connect it at app.beta.shared.bianoble.com/setup.
+Integration tools require the user to have connected the relevant service in their NobleCloak workspace settings. If a tool returns "integration not connected", guide them to connect it in the NobleCloak app's settings.
 
 ## How to Help
 

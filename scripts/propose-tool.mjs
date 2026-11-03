@@ -19,7 +19,7 @@
  * validation; deployment-side codes such as approval_unroutable exit 1) · 3 not signed in (no session, 401, or consent denied/timed out) · 1 anything else (network, 5xx, bad config).
  *
  * Env: NOBLECLOAK_GOVERN_URL (govern origin override), NOBLECLOAK_APPROVALS_URL (overrides
- * the default: on beta, the shell's /approvals module, derived from the govern origin).
+ * the default: for the production govern origin, the app's /approvals module; none for other origins).
  */
 
 import { readFileSync, realpathSync, rmSync } from 'node:fs';

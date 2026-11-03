@@ -14,6 +14,9 @@ plugin from it, and sign in:
 /noblecloak-login
 ```
 
+If you do not have a NobleCloak account yet, signing in creates one, with a
+personal workspace.
+
 Both the marketplace and the plugin are named `noblecloak`. Updates arrive
 through `/plugin marketplace update noblecloak` followed by
 `/plugin update noblecloak@noblecloak`. To install from a local clone instead,
@@ -65,20 +68,25 @@ The plugin keeps its sign-in and undelivered audit records in
 plugin update or reinstall does not sign you out. `~/.noblecloak/` is shared
 with other NobleCloak tools, hence the subdirectory.
 
-**Upgrading from the `bianoble` plugin.** The first session start (or
-`/noblecloak-login` or `/noblecloak-status`) moves the old state in, once, when the
-new directory has no `auth.json` and no `migrated-from` marker (so
-`/noblecloak-logout` stays logged out; it migrates first, then clears). It looks in `NOBLECLOAK_MIGRATE_FROM` (set it if
-you moved or renamed your checkout), in `<plugin>/.local`, and in
-`~/.claude/plugins/cache/bianoble/bianoble/*/.local`, and moves the files from the
-one holding `auth.json` (the explicit path first, otherwise the newest). It keeps
-mode `0600`, records the source in `migrated-from`, prints one line naming it,
-and never deletes the old directory. It does nothing when `NOBLECLOAK_STATE_DIR`
-is set. The OAuth client registered by the old plugin is reused, so the consent
-screen keeps showing the old client name ("Claude Code — BiaNoble plugin") until the
-client is registered again. The old environment variables are not read
-any more: every `BIANOBLE_*` is now `NOBLECLOAK_*`, and `/noblecloak-status` warns
-about any `BIANOBLE_*` still set.
+**State from an earlier install location.** An earlier version of this plugin
+kept its state in `<plugin>/.local`. The first session start (or
+`/noblecloak-login` or `/noblecloak-status`) moves it in, once, when the new
+directory has no `auth.json` and no `migrated-from` marker (so
+`/noblecloak-logout` stays logged out; it migrates first, then clears). It looks
+in `NOBLECLOAK_MIGRATE_FROM` (set it if you moved or renamed your checkout) and in
+`<plugin>/.local`, and moves the files from the one holding `auth.json` (the
+explicit path first). It keeps mode `0600`, records the source in
+`migrated-from`, prints one line naming it, and never deletes the old directory.
+It does nothing when `NOBLECLOAK_STATE_DIR` is set.
+
+**A sign-in belongs to one deployment.** `auth.json` records the issuer it was
+made against, and `client.json` the registration endpoint its OAuth client was
+registered at. The hooks and scripts ignore a sign-in whose issuer is not the
+one configured now (`/noblecloak-status` says so), and `/noblecloak-login`
+registers a new client when the saved one came from another authorization
+server. Files written by plugin 0.1.x record neither, and 0.1.x signed in to the
+beta deployment by default, so after upgrading to 0.2.0 run `/noblecloak-login`
+once.
 
 ## Privacy posture in one paragraph
 
@@ -171,9 +179,9 @@ node scripts/propose-tool.mjs --tool-ref mcp__acme__send --level external --poli
   reads of `~/.noblecloak/claude-plugin/auth.json` is an open decision for David.
 - **Approval link.** The shell serves the approvals module at `/approvals` (D-A87).
   The tab is locked until the Core `approvals` product is entitled for the org.
-  When `NOBLECLOAK_APPROVALS_URL` is unset and the govern origin is the beta one
-  (`https://govern.beta.shared.bianoble.com`), the script prints
-  `Approve it at https://shell.beta.shared.bianoble.com/approvals`. Any other govern
+  When `NOBLECLOAK_APPROVALS_URL` is unset and the govern origin is the production one
+  (`https://govern.noblecloak.com`), the script prints
+  `Approve it at https://app.noblecloak.com/approvals`. Any other govern
   origin has no default and prints "Approve it in the NobleCloak approvals
   module." Set `NOBLECLOAK_APPROVALS_URL` to override either. The script never
   opens the approval itself.
@@ -192,7 +200,10 @@ npm test    # node --test against a local stub HTTP server
 ```
 
 Environment variables are documented in
-[`docs/governance-hook.md`](docs/governance-hook.md).
+[`docs/governance-hook.md`](docs/governance-hook.md). The defaults point at the
+production NobleCloak deployment; the `NOBLECLOAK_*` variables point the hooks
+and scripts at another one, while Claude Code's own MCP connection always uses
+the gateway in the committed `.mcp.json`.
 
 ## Support
 

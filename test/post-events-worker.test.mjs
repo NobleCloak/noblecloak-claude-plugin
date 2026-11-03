@@ -15,6 +15,7 @@ import { join } from 'node:path';
 
 import { makeStateDir, readSpillRecords, runWorker, seedAuditRecord, startStub } from './helpers.mjs';
 import { workerDeadlineMs } from '../scripts/hooks/post-events-worker.mjs';
+import { CE_SOURCE_LOCAL_EXECUTION } from '../scripts/lib/governance.mjs';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -67,7 +68,7 @@ function preRecord(overrides = {}) {
 
 /** Minimal in-band `:pre` envelope for tool_use_id `tid`. */
 function preEnvelope(tid) {
-  return { id: `${tid}:pre`, source: 'bianoble/local-execution/claude-code', type: 'x', subject: SESSION_ID, data: {} };
+  return { id: `${tid}:pre`, source: CE_SOURCE_LOCAL_EXECUTION, type: 'x', subject: SESSION_ID, data: {} };
 }
 
 /** Write a worker payload file and return its path. */
@@ -262,7 +263,7 @@ test('worker: a grant rejected on the first drained emit stops the drain — one
   const stateDir = makeStateDir();
   writeFileSync(
     join(stateDir, 'auth.json'),
-    JSON.stringify({ accessToken: 'revoked', refreshToken: 'dead', expiresAt: Date.now() + 3_600_000 })
+    JSON.stringify({ issuer: stub.url, accessToken: 'revoked', refreshToken: 'dead', expiresAt: Date.now() + 3_600_000 })
   );
   const env = { NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url };
   for (let i = 0; i < 3; i += 1) {
