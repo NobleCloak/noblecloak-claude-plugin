@@ -23,7 +23,6 @@ import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
 import {
   AuthDiscoveryError,
-  DEFAULT_ISSUER,
   clearSignedOut,
   decodeJwtClaims,
   discoverAuthServer,
@@ -41,7 +40,9 @@ import {
 // from {NOBLECLOAK_ISSUER}/.well-known/oauth-authorization-server (Core is the
 // OAuth 2.1 AS under the API host; the discovery document names its endpoints).
 
-const API_BASE_URL = process.env.NOBLECLOAK_API_URL || DEFAULT_ISSUER;
+// The connection registration (POST /mcp/connections) carries the access token,
+// so it goes to the deployment that issued it: the configured issuer.
+const API_BASE_URL = process.env.NOBLECLOAK_API_URL || issuerBaseUrl();
 // The OAuth client_id is resolved at login time via ensureRegisteredClientId
 // (DCR-registered + persisted, or NOBLECLOAK_CLIENT_ID override) — not a constant.
 const REDIRECT_PORT = Number(process.env.NOBLECLOAK_REDIRECT_PORT) || 19284;

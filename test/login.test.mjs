@@ -111,3 +111,19 @@ test('adv-1: a client.json registered at another authorization server is replace
     await stub.close();
   }
 });
+
+test('adv-2: with only NOBLECLOAK_ISSUER set, the connection registration goes to that issuer, not the default host', async () => {
+  const stub = await asStub();
+  const { env } = await loginEnv(stub);
+  assert.equal(env.NOBLECLOAK_API_URL, undefined, 'precondition: no API URL override');
+  try {
+    const { result } = await runLogin(env);
+    assert.equal(result.code, 0, result.stderr);
+    const regs = stub.requests.filter((r) => r.method === 'POST' && r.path === '/mcp/connections');
+    assert.equal(regs.length, 1, `registration reached the configured issuer: ${result.stderr}`);
+    assert.equal(regs[0].headers.authorization, `Bearer ${stub.tokenResponse.access_token}`);
+    assert.doesNotMatch(result.stderr, /api\.noblecloak\.com/);
+  } finally {
+    await stub.close();
+  }
+});
