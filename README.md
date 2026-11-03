@@ -79,6 +79,15 @@ explicit path first). It keeps mode `0600`, records the source in
 `migrated-from`, prints one line naming it, and never deletes the old directory.
 It does nothing when `NOBLECLOAK_STATE_DIR` is set.
 
+**A sign-in belongs to one deployment.** `auth.json` records the issuer it was
+made against, and `client.json` the registration endpoint its OAuth client was
+registered at. The hooks and scripts ignore a sign-in whose issuer is not the
+one configured now (`/noblecloak-status` says so), and `/noblecloak-login`
+registers a new client when the saved one came from another authorization
+server. Files written by plugin 0.1.x record neither, and 0.1.x signed in to the
+beta deployment by default, so after upgrading to 0.2.0 run `/noblecloak-login`
+once.
+
 ## Privacy posture in one paragraph
 
 The hooks match `Bash`, `Edit`, `Write`, `Read`, `Glob`, `Grep`, `WebFetch`,

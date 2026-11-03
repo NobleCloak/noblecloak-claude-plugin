@@ -263,7 +263,7 @@ test('worker: a grant rejected on the first drained emit stops the drain — one
   const stateDir = makeStateDir();
   writeFileSync(
     join(stateDir, 'auth.json'),
-    JSON.stringify({ accessToken: 'revoked', refreshToken: 'dead', expiresAt: Date.now() + 3_600_000 })
+    JSON.stringify({ issuer: stub.url, accessToken: 'revoked', refreshToken: 'dead', expiresAt: Date.now() + 3_600_000 })
   );
   const env = { NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_ISSUER: stub.url };
   for (let i = 0; i < 3; i += 1) {

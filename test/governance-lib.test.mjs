@@ -412,7 +412,7 @@ test('corrupted auth.json degrades to null / no-token instead of throwing', () =
 test('NOBLECLOAK_DEV_TOKEN takes precedence over a populated auth.json', () => {
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir };
-  saveAuthState({ accessToken: 'file-token', refreshToken: 'file-refresh', expiresAt: Date.now() + 3600_000 }, env);
+  saveAuthState({ issuer: issuerBaseUrl(env), accessToken: 'file-token', refreshToken: 'file-refresh', expiresAt: Date.now() + 3600_000 }, env);
   const fromFile = getBearerToken(env);
   assert.deepEqual(fromFile, { token: 'file-token', source: 'auth-file', refreshToken: 'file-refresh' });
   const fromDev = getBearerToken({ ...env, NOBLECLOAK_DEV_TOKEN: 'dev-token' });

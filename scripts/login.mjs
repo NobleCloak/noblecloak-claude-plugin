@@ -232,6 +232,9 @@ async function login() {
           tokenType: tokens.token_type || 'Bearer',
           scope: tokens.scope || SCOPES,
           authenticatedAt: new Date().toISOString(),
+          // The deployment this sign-in belongs to: loadAuthState ignores the
+          // file when NOBLECLOAK_ISSUER names another one.
+          issuer: issuerBaseUrl(),
           ...(orgId ? { orgId } : {}),
           ...(sub ? { sub } : {}),
         };
@@ -309,7 +312,8 @@ async function login() {
 // ── Entry Point ─────────────────────────────────────────────────────────
 
 try {
-  // Before login, so a client.json registered by an earlier install is reused.
+  // Before login, so a client.json registered by an earlier install is reused
+  // (when it was registered at the authorization server discovered now).
   const { message } = migrateLegacyState();
   if (message) console.log(message);
   const { authState } = await login();

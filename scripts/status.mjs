@@ -33,6 +33,7 @@ import {
   issuerBaseUrl,
   loadAuthState,
   loadMcpConfig,
+  readAuthFile,
   localAuditStatus,
   migrateLegacyState,
   readMigrationMarker,
@@ -119,6 +120,13 @@ console.log(`Governance: COO ${cooBaseUrl()} — ${isEnforceMode() ? 'ENFORCE' :
 
 if (!auth) {
   console.log('Status: Not connected');
+  // loadAuthState ignores a sign-in made against another deployment; say so.
+  const saved = readAuthFile();
+  if (saved) {
+    console.log(
+      `The saved sign-in belongs to ${saved.issuer ?? 'another deployment (saved by plugin 0.1.x)'}, not ${issuerBaseUrl()}; it is not used.`
+    );
+  }
   console.log('Run /noblecloak-login to connect your NobleCloak workspace.');
   printLocalAudit();
   process.exit(0);

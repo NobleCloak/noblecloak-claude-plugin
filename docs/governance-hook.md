@@ -146,6 +146,11 @@ Refresh is single-flight across concurrent hook processes (an exclusive lockfile
 state dir; waiters re-read and adopt the winner's tokens) and `auth.json` is written
 atomically (temp file + rename), so parallel tool calls hitting a 401 storm can't burn a
 rotated refresh token or tear the file.
+A sign-in is used only against the issuer it was made at: `auth.json` records `issuer`
+(the `NOBLECLOAK_ISSUER` base at sign-in), and a file whose `issuer` differs from the current one,
+or has none (plugin 0.1.x), reads as signed out, so its tokens are neither sent to COO nor
+refreshed. `client.json` records `registrationEndpoint`; `/noblecloak-login` reuses the client
+only when it matches the discovered `registration_endpoint`, and registers again otherwise.
 Token refresh goes through RFC 8414 discovery on `NOBLECLOAK_ISSUER` — the token endpoint comes
 from the discovery doc. **Core OAuth AS Stage 4 has shipped** (verified 2026-08-13: the beta
 discovery document serves `authorization_endpoint`, `token_endpoint`, `registration_endpoint`

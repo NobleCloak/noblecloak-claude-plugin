@@ -150,6 +150,7 @@ function proposeEnv(stub, { session = true } = {}) {
     writeFileSync(
       join(state, 'auth.json'),
       JSON.stringify({
+        issuer: stub.url,
         accessToken: 'gw-token',
         refreshToken: 'gw-refresh',
         expiresAt: Date.now() + 3_600_000,

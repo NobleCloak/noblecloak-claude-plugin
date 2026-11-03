@@ -10,6 +10,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  DEFAULT_ISSUER,
   getTokenFor,
   governResourceIndicator,
   refreshTokenFor,
@@ -55,7 +56,7 @@ test('governResourceIndicator: null when the gateway host is not mcp.* (no guess
 
 test('getTokenFor: a legacy single-token auth.json is the gateway entry; govern is absent until stored', () => {
   const dir = makeStateDir();
-  seed(dir, {});
+  seed(dir, { issuer: DEFAULT_ISSUER });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_MCP_FILE: mcpFile(dir) };
   assert.equal(getTokenFor(GATEWAY, env).accessToken, 'gw-token');
   assert.equal(getTokenFor(GOVERN, env), null);
@@ -63,7 +64,7 @@ test('getTokenFor: a legacy single-token auth.json is the gateway entry; govern 
 
 test('saveTokenFor stores beside the gateway token without touching it; getTokenFor reads it back', async () => {
   const dir = makeStateDir();
-  seed(dir, {});
+  seed(dir, { issuer: DEFAULT_ISSUER });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_MCP_FILE: mcpFile(dir) };
   await saveTokenFor(GOVERN, { accessToken: 'gv-token', refreshToken: 'gv-refresh', expiresAt: 1 }, env);
   assert.equal(getTokenFor(GOVERN, env).accessToken, 'gv-token');
@@ -81,7 +82,7 @@ test('saveTokenFor with no session throws (a govern token never creates a sessio
 test('refreshTokenFor re-sends the resource, rotates the refresh token, leaves the gateway token alone', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seed(dir, { tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
+  seed(dir, { issuer: stub.url, tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_MCP_FILE: mcpFile(dir) };
   try {
     const updated = await refreshTokenFor(GOVERN, env);
@@ -103,7 +104,7 @@ test('refreshTokenFor re-sends the resource, rotates the refresh token, leaves t
 test('refresh.mjs: gateway valid + govern expired → only the govern grant fires (with resource)', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seed(dir, { tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: Date.now() - 1000 } } });
+  seed(dir, { issuer: stub.url, tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: Date.now() - 1000 } } });
   try {
     const result = await runScript(REFRESH_PATH, {
       NOBLECLOAK_ISSUER: stub.url,
@@ -125,7 +126,7 @@ test('refresh.mjs: gateway valid + govern expired → only the govern grant fire
 test('refresh.mjs: both expired → both refreshed; gateway grant carries no resource', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seed(dir, {
+  seed(dir, { issuer: stub.url,
     expiresAt: Date.now() - 1000,
     tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: Date.now() - 1000 } },
   });
@@ -151,7 +152,7 @@ test('refresh.mjs: govern grant rejected → advice names /noblecloak-propose-to
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seed(dir, { tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: Date.now() - 1000 } } });
+  seed(dir, { issuer: stub.url, tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: Date.now() - 1000 } } });
   try {
     const result = await runScript(REFRESH_PATH, {
       NOBLECLOAK_ISSUER: stub.url,
@@ -179,7 +180,7 @@ test('login replaces auth.json wholesale: its saved state carries no per-resourc
 test('auth.json is written owner-only (0600) by saveTokenFor and again by a refresh rewrite', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seed(dir, { tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
+  seed(dir, { issuer: stub.url, tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_MCP_FILE: mcpFile(dir) };
   try {
     await saveTokenFor(GOVERN, { accessToken: 'x', refreshToken: 'y', expiresAt: 1 }, env);
@@ -194,7 +195,7 @@ test('auth.json is written owner-only (0600) by saveTokenFor and again by a refr
 test('refreshTokenFor single-flight: two overlapping refreshes send ONE grant and both return the winner\'s tokens', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seed(dir, { tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
+  seed(dir, { issuer: stub.url, tokens: { [GOVERN]: { accessToken: 'gv-old', refreshToken: 'gv-r1', expiresAt: 1 } } });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_MCP_FILE: mcpFile(dir) };
   try {
     const [a, b] = await Promise.all([refreshTokenFor(GOVERN, env), refreshTokenFor(GOVERN, env)]);

@@ -42,6 +42,7 @@ function setup(stub, { govern = GOVERN_TOKEN, session = true, extraEnv = {} } = 
     writeFileSync(
       join(dir, 'auth.json'),
       JSON.stringify({
+        issuer: stub.url,
         accessToken: 'gw-token',
         refreshToken: 'gw-refresh',
         expiresAt: Date.now() + 3_600_000,
@@ -576,6 +577,34 @@ test('govern origin equal to the gateway origin → exit 1 config error, no netw
     assert.equal(r.code, 1);
     assert.match(r.stderr, /equals the MCP gateway origin/);
     assert.equal(stub.requests.length, 0);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('a persisted client from another authorization server is never replaced here (only /noblecloak-login does) → exit 1, client.json untouched', async () => {
+  const stub = await startStub();
+  stub.discoveryDoc = {
+    issuer: stub.url,
+    authorization_endpoint: `${stub.url}/auth/oauth/authorize`,
+    token_endpoint: `${stub.url}/auth/oauth/token`,
+    registration_endpoint: `${stub.url}/auth/oauth/register`,
+  };
+  const port = await freePort();
+  const { dir, env } = setup(stub, { govern: null, extraEnv: { NOBLECLOAK_REDIRECT_PORT: String(port) } });
+  delete env.NOBLECLOAK_CLIENT_ID;
+  const persisted = JSON.stringify({
+    clientId: 'beta-client',
+    redirectUri: `http://localhost:${port}/callback`,
+    registrationEndpoint: 'https://auth.beta.example/auth/oauth/register',
+  });
+  writeFileSync(join(dir, 'client.json'), persisted);
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /belongs to another authorization server/);
+    assert.equal(stub.requests.filter((q) => q.path === '/auth/oauth/register').length, 0);
+    assert.equal(readFileSync(join(dir, 'client.json'), 'utf-8'), persisted);
   } finally {
     await stub.close();
   }

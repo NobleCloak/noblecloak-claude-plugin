@@ -16,6 +16,7 @@ import { join } from 'node:path';
 
 import {
   AUDIT_DEAD_LETTER_RETENTION,
+  DEFAULT_ISSUER,
   compactAuditQueueAndLedger,
   decodeJwtClaims,
   gatewayUrl,
@@ -260,7 +261,8 @@ function runStatus(env) {
 function makeStateDir(authState) {
   const dir = mkdtempSync(join(tmpdir(), 'bn-status-'));
   mkdirSync(dir, { recursive: true });
-  if (authState) writeFileSync(join(dir, 'auth.json'), JSON.stringify(authState));
+  // status runs with the default issuer (no NOBLECLOAK_ISSUER), so the sign-in belongs to it.
+  if (authState) writeFileSync(join(dir, 'auth.json'), JSON.stringify({ issuer: DEFAULT_ISSUER, ...authState }));
   return dir;
 }
 
@@ -343,6 +345,27 @@ test('status skips the probe on an expired token', async () => {
   assert.match(stdout, /Catalog: skipped \(token expired\)\./);
   assert.match(stdout, /noblecloak-login/);
 });
+
+for (const [label, issuer, named] of [
+  ['another issuer', 'https://api.beta.example', /belongs to https:\/\/api\.beta\.example, not https:\/\/api\.noblecloak\.com; it is not used/],
+  ['no issuer (plugin 0.1.x)', undefined, /belongs to another deployment \(saved by plugin 0\.1\.x\)/],
+]) {
+  test(`status: a sign-in saved with ${label} is reported as not connected, and says why`, async () => {
+    const stateDir = makeStateDir({
+      issuer,
+      accessToken: makeJwt({ sub: SUB, org_id: ORG }),
+      refreshToken: 'r',
+      expiresAt: Date.now() + 3_600_000,
+    });
+    const { code, stdout } = await runStatus({
+      NOBLECLOAK_STATE_DIR: stateDir,
+      ...withMcpFile('http://127.0.0.1:1/v1/mcp'),
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /Status: Not connected/);
+    assert.match(stdout, named);
+  });
+}
 
 test('status reports UNKNOWN org for a pre-org-binding token with no org_id claim', async () => {
   const { server, url } = await startGateway((req, res) => {

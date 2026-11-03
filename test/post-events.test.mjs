@@ -718,7 +718,7 @@ test('signed out: no event POST, no token call, and the drain does not re-spill 
   const stateDir = makeStateDir();
   writeFileSync(
     join(stateDir, 'auth.json'),
-    JSON.stringify({ accessToken: 'dead', refreshToken: 'dead-r', expiresAt: Date.now() - 60_000 })
+    JSON.stringify({ issuer: stub.url, accessToken: 'dead', refreshToken: 'dead-r', expiresAt: Date.now() - 60_000 })
   );
   writeFileSync(join(stateDir, 'signed-out.json'), JSON.stringify({ since: 'x', reason: 'invalid_grant', checkedAt: Date.now() }));
   for (let i = 0; i < 5; i += 1) await seedAuditRecord(stateDir, preRecord({ tool_use_id: `toolu_backlog_${i}` }));

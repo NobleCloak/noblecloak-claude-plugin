@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  DEFAULT_ISSUER,
   MIGRATED_STATE_FILES,
   MIGRATION_MARKER,
   defaultStateDir,
@@ -242,6 +243,7 @@ function oldInstallWithAuth(root) {
   const old = join(root, 'old-checkout', '.local');
   writeState(old, {
     'auth.json': JSON.stringify({
+      issuer: DEFAULT_ISSUER,
       accessToken: 'x.y.z',
       refreshToken: 'r',
       expiresAt: Date.now() - 60_000, // expired: status skips the network probe

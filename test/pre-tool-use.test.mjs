@@ -242,11 +242,12 @@ test('channel: cli + no agent_id → interactive; everything else headless', asy
 
 // ── 401 → refresh → retry-once ──────────────────────────────────────────────
 
-function seedAuth(stateDir, { accessToken = 'stale-token', refreshToken = 'refresh-1' } = {}) {
+function seedAuth(stateDir, { issuer, accessToken = 'stale-token', refreshToken = 'refresh-1' } = {}) {
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, 'auth.json'),
     JSON.stringify({
+      issuer,
       accessToken,
       refreshToken,
       expiresAt: Date.now() + 3600_000,
@@ -259,7 +260,7 @@ function seedAuth(stateDir, { accessToken = 'stale-token', refreshToken = 'refre
 test('401 → refresh via discovered token endpoint → retry once succeeds', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   stub.resolveResponses = [
     { status: 401, body: { error: 'unauthorized' } },
     resolveResponse('always_allow'),
@@ -287,7 +288,7 @@ test('401 → refresh via discovered token endpoint → retry once succeeds', as
 test('401 twice → retry only once, then fail-mode (enforce, write tool → deny)', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   stub.resolveResponses = [{ status: 401, body: {} }];
   const env = stubEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' });
   delete env.NOBLECLOAK_DEV_TOKEN;
@@ -303,7 +304,7 @@ test('401 twice → retry only once, then fail-mode (enforce, write tool → den
 test('401 → token endpoint 5xx → degraded refresh-failed, fail-closed for a write tool in enforce', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   stub.resolveResponses = [{ status: 401, body: {} }];
   stub.tokenStatus = 500;
   const env = stubEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' });
@@ -322,7 +323,7 @@ test('401 → token endpoint 5xx → degraded refresh-failed, fail-closed for a 
 test('401 → discovery doc without token_endpoint → refresh-failed with the Stage-4-pending message', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   stub.resolveResponses = [{ status: 401, body: {} }];
   stub.discoveryDoc = { issuer: 'x', authorization_endpoint: 'y' }; // current production state
   const env = stubEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' });
@@ -354,7 +355,7 @@ test('401 with dev token (no refresh path) → fail-mode, no retry', async () =>
 test('401 → hung discovery: cumulative budget still emits a decision well under the hooks.json timeout', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   stub.resolveResponses = [{ status: 401, body: {} }];
   stub.hangPaths = ['/.well-known/oauth-authorization-server'];
   const env = stubEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' }); // default timeouts on purpose
@@ -373,7 +374,7 @@ test('401 → hung discovery: cumulative budget still emits a decision well unde
 test('401 → refresh succeeds but the budget is spent before the retry → budget-exhausted (enforce write → deny)', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  seedAuth(stateDir);
+  seedAuth(stateDir, { issuer: stub.url });
   // Attempt #1 → 401 drives a real discovery + token refresh (stub serves both
   // by default). The budget-clock seam reports +5s of elapsed wall-clock at the
   // SECOND checkpoint (after the refresh), pushing it past the 4s cumulative
@@ -741,6 +742,20 @@ test('no token at all → degraded no-token fail-mode (audit-only allows)', asyn
   assert.equal(record.degraded_reason, 'no-token');
 });
 
+test('a sign-in from another deployment is not used: no request carries its token (adv-1)', async () => {
+  const stub = await startStub();
+  const stateDir = makeStateDir();
+  seedAuth(stateDir, { issuer: 'https://api.beta.example', accessToken: 'beta-token' });
+  const env = stubEnv(stub, stateDir);
+  delete env.NOBLECLOAK_DEV_TOKEN;
+  const result = await runHook(hookInput({ tool_name: 'Bash', tool_input: { command: 'ls' } }), env);
+  await stub.close();
+  assert.equal(decisionOf(result), 'allow');
+  assert.equal(stub.requests.length, 0, 'no resolve, no discovery, no token grant');
+  const [record] = readAuditRecords(stateDir);
+  assert.equal(record.degraded_reason, 'no-token');
+});
+
 // ── local expiry check + signed-out marker (auth/audit hygiene 2026-10-20) ──
 //
 // The 2026-08 → 2026-10 incident: an expired token was POSTed to resolve on
@@ -776,7 +791,7 @@ test('expired token + refresh succeeds → resolve sends ONLY the refreshed toke
   const stub = await startStub();
   t.after(() => stub.close());
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   const result = await runHook(hookInput({ tool_name: 'Read' }), authFileEnv(stub, stateDir));
   await stub.close();
   assert.equal(decisionOf(result), 'allow');
@@ -793,7 +808,7 @@ test('expired token + rejected refresh → marker written, ZERO resolve calls, v
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   const env = authFileEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' });
   const result = await runHook(hookInput({ tool_name: 'Edit', tool_input: { file_path: '/tmp/a' } }), env);
 
@@ -820,7 +835,7 @@ test('signed-out notice is shown once PER SESSION: a different session sees it t
   const stub = await startStub();
   t.after(() => stub.close());
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   writeFileSync(markerPath(stateDir), JSON.stringify({ since: '2026-08-18T00:00:00.000Z', reason: 'invalid_grant', checkedAt: Date.now() }));
   // The marker is normally written via writeSignedOut, which also queues the notice.
   const { postNotice, signedOutMessage } = await import('../scripts/lib/governance.mjs');
@@ -840,7 +855,7 @@ test('signed-out re-check interval: not due → no refresh; due → one refresh,
   const stub = await startStub();
   t.after(() => stub.close());
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   // Last checked 1 minute ago; interval 15 minutes (default) → not due.
   writeFileSync(markerPath(stateDir), JSON.stringify({ since: 'x', reason: 'invalid_grant', checkedAt: Date.now() - 60_000 }));
   const env = authFileEnv(stub, stateDir);
@@ -863,7 +878,7 @@ test('signed-out re-check that is rejected again keeps the marker, keeps `since`
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   const oldCheck = Date.now() - 3_600_000;
   writeFileSync(markerPath(stateDir), JSON.stringify({ since: '2026-08-18T00:00:00.000Z', reason: 'old', checkedAt: oldCheck }));
   await runHook(hookInput(), authFileEnv(stub, stateDir));
@@ -880,7 +895,7 @@ test('expired token + TRANSIENT refresh failure (503) → no resolve, no marker,
   t.after(() => stub.close());
   stub.tokenStatus = 503;
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir);
+  seedExpiringAuth(stateDir, { issuer: stub.url });
   const result = await runHook(hookInput({ tool_name: 'Read' }), authFileEnv(stub, stateDir));
   await stub.close();
   assert.equal(stub.resolveRequests().length, 0, 'the expired token is not sent even when the refresh is only transiently down');
@@ -894,7 +909,7 @@ test('expired token and NO refresh token → marker, no network at all', async (
   const stub = await startStub();
   t.after(() => stub.close());
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir, { refreshToken: null });
+  seedExpiringAuth(stateDir, { issuer: stub.url, refreshToken: null });
   const result = await runHook(hookInput(), authFileEnv(stub, stateDir));
   await stub.close();
   assert.equal(stub.requests.length, 0);
@@ -906,7 +921,7 @@ test('a token inside the clock-skew allowance counts as expired (refreshed, not 
   const stub = await startStub();
   t.after(() => stub.close());
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir, { expiresAt: Date.now() + 5_000 }); // within the 30s skew
+  seedExpiringAuth(stateDir, { issuer: stub.url, expiresAt: Date.now() + 5_000 }); // within the 30s skew
   await runHook(hookInput(), authFileEnv(stub, stateDir));
   await stub.close();
   assert.equal(tokenGrants(stub).length, 1);
@@ -920,7 +935,7 @@ test('401 → refresh REJECTED → marker written, degraded signed-out, next cal
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const stateDir = makeStateDir();
-  seedExpiringAuth(stateDir, { accessToken: 'revoked-token', expiresAt: Date.now() + 3_600_000 });
+  seedExpiringAuth(stateDir, { issuer: stub.url, accessToken: 'revoked-token', expiresAt: Date.now() + 3_600_000 });
   const env = authFileEnv(stub, stateDir);
   await runHook(hookInput(), env);
   assert.equal(stub.resolveRequests().length, 1);

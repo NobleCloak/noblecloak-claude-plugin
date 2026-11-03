@@ -406,7 +406,11 @@ function migrateOnceIfDefaultDir(env) {
   }
 }
 
-export function loadAuthState(env = process.env) {
+/**
+ * The sign-in saved in auth.json, as JSON, or null. Unlike `loadAuthState` it
+ * does not check which deployment the sign-in belongs to.
+ */
+export function readAuthFile(env = process.env) {
   const file = authFilePath(env);
   if (!existsSync(file)) {
     migrateOnceIfDefaultDir(env);
@@ -417,6 +421,26 @@ export function loadAuthState(env = process.env) {
   } catch {
     return null;
   }
+}
+
+/**
+ * True when a saved sign-in was made against the issuer configured now:
+ * `auth.issuer` (written by /noblecloak-login) equals `issuerBaseUrl(env)`.
+ * A file with no `issuer` (written by plugin 0.1.x, whose default was the beta
+ * deployment) counts as another deployment.
+ */
+export function authStateMatchesIssuer(auth, env = process.env) {
+  return typeof auth?.issuer === 'string' && stripTrailingSlash(auth.issuer) === issuerBaseUrl(env);
+}
+
+/**
+ * The saved sign-in, or null when there is none or it belongs to another
+ * deployment (see `authStateMatchesIssuer`), so a token from one deployment is
+ * never sent to, or refreshed at, another. /noblecloak-login replaces it.
+ */
+export function loadAuthState(env = process.env) {
+  const auth = readAuthFile(env);
+  return auth && authStateMatchesIssuer(auth, env) ? auth : null;
 }
 
 /**
@@ -859,7 +883,8 @@ export function clientId(env = process.env) {
 // The AS issues OAuth client_ids via DCR (it does NOT honour a caller-chosen
 // id), so the plugin registers a public + PKCE client on first login and
 // persists the generated id in <state dir>/client.json, keyed by redirect_uri (the
-// AS binds an issued code to the exact redirect_uri its client registered).
+// AS binds an issued code to the exact redirect_uri its client registered) and by
+// the registration endpoint (another AS does not know the id).
 // `clientId()` above stays a stable LABEL for the governance resolve payload;
 // the OAuth client_id is this dynamically-registered value.
 
@@ -933,16 +958,29 @@ export async function registerOAuthClient({ registrationEndpoint, redirectUri, t
 }
 
 /**
+ * True when a persisted client (client.json) was registered at
+ * `registrationEndpoint`. A client.json with no `registrationEndpoint`
+ * (written by plugin 0.1.x, whose default was the beta deployment) counts as
+ * registered elsewhere.
+ */
+export function clientRegisteredAt(persisted, registrationEndpoint) {
+  return Boolean(registrationEndpoint) && persisted?.registrationEndpoint === registrationEndpoint;
+}
+
+/**
  * Resolve the OAuth client_id to authorize with, registering once if needed:
  *   1. NOBLECLOAK_CLIENT_ID env override (a pre-registered client) wins.
- *   2. A persisted client_id for the SAME redirect_uri is reused.
- *   3. Otherwise register via DCR and persist (keyed by redirect_uri).
+ *   2. A persisted client_id for the SAME redirect_uri AND the same
+ *      registration endpoint is reused (another authorization server does not
+ *      know that client_id).
+ *   3. Otherwise register via DCR and persist (with the redirect_uri and the
+ *      registration endpoint).
  */
 export async function ensureRegisteredClientId({ registrationEndpoint, redirectUri, env = process.env } = {}) {
   if (env.NOBLECLOAK_CLIENT_ID) return env.NOBLECLOAK_CLIENT_ID;
 
   const persisted = loadRegisteredClient(env);
-  if (persisted?.clientId && persisted.redirectUri === redirectUri) {
+  if (persisted?.clientId && persisted.redirectUri === redirectUri && clientRegisteredAt(persisted, registrationEndpoint)) {
     return persisted.clientId;
   }
 
@@ -955,7 +993,10 @@ export async function ensureRegisteredClientId({ registrationEndpoint, redirectU
   }
 
   const newClientId = await registerOAuthClient({ registrationEndpoint, redirectUri });
-  saveRegisteredClient({ clientId: newClientId, redirectUri, registeredAt: new Date().toISOString() }, env);
+  saveRegisteredClient(
+    { clientId: newClientId, redirectUri, registrationEndpoint, registeredAt: new Date().toISOString() },
+    env
+  );
   return newClientId;
 }
 

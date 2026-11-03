@@ -10,13 +10,17 @@ import { existsSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSyn
 import { join } from 'node:path';
 
 import {
+  DEFAULT_ISSUER,
   discoverAuthServer,
   getTokenEndpoint,
   refreshAuthState,
   refreshTokens,
   saveAuthState,
   ensureRegisteredClientId,
+  getBearerToken,
+  loadAuthState,
   loadRegisteredClient,
+  readAuthFile,
   saveRegisteredClient,
   AuthDiscoveryError,
   TokenRefreshError,
@@ -90,7 +94,7 @@ test('concurrent refreshAuthState calls fire exactly one token grant; losers ado
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   try {
     const results = await Promise.all([
       refreshAuthState(env),
@@ -115,7 +119,7 @@ test('refreshAuthState always grants with the CURRENT on-disk refresh token (rot
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   try {
     await refreshAuthState(env); // rotates refresh-1 → refreshed-refresh on disk
     await refreshAuthState(env); // must use the rotated token, never refresh-1
@@ -131,7 +135,7 @@ test('refreshAuthState always grants with the CURRENT on-disk refresh token (rot
 test('refreshAuthState without a refresh token names /noblecloak-login', async () => {
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir };
-  seedAuth(dir, { refreshToken: undefined });
+  seedAuth(dir, { issuer: DEFAULT_ISSUER, refreshToken: undefined });
   await assert.rejects(refreshAuthState(env), /noblecloak-login/);
 });
 
@@ -146,7 +150,7 @@ test('a stale lock from a crashed holder is stolen: refresh proceeds and the loc
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   const lockPath = join(dir, 'auth.json.lock');
   writeFileSync(lockPath, '99999.deadbeef'); // crashed holder's lock
   backdateLock(lockPath, 20_000); // older than AUTH_LOCK_STALE_MS (15s)
@@ -165,7 +169,7 @@ test('two waiters racing on the same stale lock produce exactly one token grant'
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   const lockPath = join(dir, 'auth.json.lock');
   writeFileSync(lockPath, '99999.deadbeef');
   backdateLock(lockPath, 20_000);
@@ -185,7 +189,7 @@ test('two waiters racing on the same stale lock produce exactly one token grant'
 test('a fresh (live) lock is NOT stolen: a deadline-bounded waiter times out instead', async () => {
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: DEFAULT_ISSUER });
   const lockPath = join(dir, 'auth.json.lock');
   writeFileSync(lockPath, '12345.cafebabe'); // fresh — held by a live process
   await assert.rejects(
@@ -199,7 +203,7 @@ test('a no-deadline waiter proceeds once the holder releases the lock', async ()
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   const lockPath = join(dir, 'auth.json.lock');
   writeFileSync(lockPath, '12345.cafebabe');
   setTimeout(() => rmSync(lockPath, { force: true }), 100); // holder finishes
@@ -341,6 +345,58 @@ test('ensureRegisteredClientId: a persisted client for a DIFFERENT redirect_uri 
   }
 });
 
+// adv-1 (2026-11-03): 0.2.0 changed the default deployment. A client_id
+// registered at another authorization server is unknown to this one
+// ("unknown client_id"), so it is never reused there.
+for (const [label, persisted] of [
+  ['registered at another authorization server', { registrationEndpoint: 'https://auth.other.example/auth/oauth/register' }],
+  ['saved by plugin 0.1.x (no registrationEndpoint)', {}],
+]) {
+  test(`ensureRegisteredClientId: a persisted client ${label} triggers re-registration`, async () => {
+    const stub = await startStub();
+    const dir = makeStateDir();
+    const env = { NOBLECLOAK_STATE_DIR: dir };
+    saveRegisteredClient({ clientId: 'client-from-elsewhere', redirectUri: REDIRECT, ...persisted }, env);
+    try {
+      const registrationEndpoint = `${stub.url}/auth/oauth/register`;
+      const id = await ensureRegisteredClientId({ registrationEndpoint, redirectUri: REDIRECT, env });
+      assert.equal(id, 'dcr-generated-id');
+      assert.equal(stub.requests.filter((r) => r.path === '/auth/oauth/register').length, 1);
+      assert.equal(loadRegisteredClient(env).registrationEndpoint, registrationEndpoint, 'records where it registered');
+    } finally {
+      await stub.close();
+    }
+  });
+}
+
+// ── a sign-in belongs to the deployment it was made against (adv-1) ────────
+
+test('loadAuthState: a sign-in made against another issuer, or saved by 0.1.x with no issuer, reads as signed out', () => {
+  const dir = makeStateDir();
+  const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: 'https://api.here.example/' };
+  seedAuth(dir, { issuer: 'https://api.here.example' });
+  assert.equal(loadAuthState(env)?.accessToken, 'stale-token', 'same issuer (trailing slash ignored)');
+  seedAuth(dir, { issuer: 'https://api.beta.example' });
+  assert.equal(loadAuthState(env), null, 'another issuer');
+  assert.equal(getBearerToken(env), null, 'no bearer token from another deployment');
+  assert.equal(readAuthFile(env)?.accessToken, 'stale-token', 'the file itself is left alone');
+  seedAuth(dir, { issuer: undefined });
+  assert.equal(loadAuthState(env), null, 'no issuer recorded (plugin 0.1.x)');
+});
+
+test('refreshAuthState never sends a refresh token from another deployment to this one', async () => {
+  const stub = await startStub();
+  const dir = makeStateDir();
+  const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
+  seedAuth(dir, { issuer: 'https://api.beta.example', expiresAt: Date.now() - 60_000 });
+  try {
+    await assert.rejects(refreshAuthState(env), /noblecloak-login/);
+    assert.equal(stub.requests.length, 0, 'no discovery, no token grant');
+  } finally {
+    await stub.close();
+  }
+});
+
 test('ensureRegisteredClientId: DCR error response throws a clear, non-discovery error', async () => {
   const stub = await startStub();
   stub.registerStatus = 400;
@@ -377,7 +433,7 @@ test('refreshAuthState sends the DCR-registered client_id, not the static label'
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   saveRegisteredClient({ clientId: 'bnoauth_test123', redirectUri: 'http://localhost:19284/callback' }, env);
   try {
     await refreshAuthState(env);
@@ -394,7 +450,7 @@ test('refresh client_id honors the NOBLECLOAK_CLIENT_ID override over the persis
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_CLIENT_ID: 'preset-client' };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   saveRegisteredClient({ clientId: 'bnoauth_ignored', redirectUri: 'http://localhost:19284/callback' }, env);
   try {
     await refreshAuthState(env);
@@ -409,7 +465,7 @@ test('refresh falls back to the static label when no client is registered and no
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   // No saveRegisteredClient, no NOBLECLOAK_CLIENT_ID: this is the first-run/legacy arm.
   assert.equal(existsSync(join(dir, 'client.json')), false, 'precondition: no client.json on disk');
   try {
@@ -426,7 +482,7 @@ test('a corrupt client.json is reported on stderr and the refresh falls back to 
   const stub = await startStub();
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
-  seedAuth(dir);
+  seedAuth(dir, { issuer: stub.url });
   // Simulate a truncated/partial write (e.g. crash mid-write).
   writeFileSync(join(dir, 'client.json'), '{ "clientId": "bnoauth_tru');
 
@@ -466,7 +522,7 @@ test('isTokenExpired: honors the skew allowance; no expiresAt is not known-expir
 test('emit while signed out: spills, ZERO fetches (events or token), breaker untouched', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   writeFileSync(join(dir, 'signed-out.json'), JSON.stringify({ since: 'x', reason: 'invalid_grant', checkedAt: Date.now() }));
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_COO_URL: stub.url };
   try {
@@ -483,7 +539,7 @@ test('emit while signed out: spills, ZERO fetches (events or token), breaker unt
 test('emit with an expired token: refreshes once, POSTs only the refreshed token', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_COO_URL: stub.url };
   try {
     const status = await emitAuditEvent({ id: 'toolu_x:pre', subject: 's' }, env);
@@ -501,7 +557,7 @@ test('emit with an expired token whose refresh is rejected: marker written, noth
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_COO_URL: stub.url };
   try {
     assert.equal(await emitAuditEvent({ id: 'a:pre', subject: 's' }, env), EMIT_SPILLED);
@@ -520,7 +576,7 @@ test('concurrent refreshes of a dead grant: waiters that queued on the lock do n
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
   try {
     const results = await Promise.all([usableBearer(env), usableBearer(env), usableBearer(env)]);
@@ -534,7 +590,7 @@ test('concurrent refreshes of a dead grant: waiters that queued on the lock do n
 test('usableBearer allowRefresh:false never touches the network', async () => {
   const stub = await startStub();
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
   try {
     const r = await usableBearer(env, { allowRefresh: false });
@@ -559,7 +615,7 @@ for (const [status, body] of [
     stub.tokenStatus = status;
     stub.tokenErrorBody = body;
     const dir = makeStateDir();
-    seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+    seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
     const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
     try {
       const r = await usableBearer(env);
@@ -584,7 +640,7 @@ for (const [status, code] of [
     stub.tokenStatus = status;
     stub.tokenErrorBody = { error: code };
     const dir = makeStateDir();
-    seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+    seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
     const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
     try {
       const r = await usableBearer(env);
@@ -604,7 +660,7 @@ test('a rejected refresh error carries the fingerprint of the refresh token it u
   stub.tokenStatus = 400;
   stub.tokenErrorBody = { error: 'invalid_grant' };
   const dir = makeStateDir();
-  seedAuth(dir, { refreshToken: 'refresh-old' });
+  seedAuth(dir, { issuer: stub.url, refreshToken: 'refresh-old' });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
   try {
     await assert.rejects(refreshAuthState(env), (err) => {
@@ -619,7 +675,7 @@ test('a rejected refresh error carries the fingerprint of the refresh token it u
 test('writeSignedOut for a credential that login already replaced writes nothing and posts no notice', async () => {
   const { writeSignedOut, credentialFingerprint, takeNotices } = await import('../scripts/lib/governance.mjs');
   const dir = makeStateDir();
-  seedAuth(dir, { refreshToken: 'refresh-new' }); // /noblecloak-login just saved this
+  seedAuth(dir, { issuer: DEFAULT_ISSUER, refreshToken: 'refresh-new' }); // /noblecloak-login just saved this
   const env = { NOBLECLOAK_STATE_DIR: dir };
   writeSignedOut('invalid_grant', env, { credentialFp: credentialFingerprint({ refreshToken: 'refresh-old' }) });
   assert.equal(existsSync(join(dir, 'signed-out.json')), false);
@@ -630,11 +686,11 @@ test('a marker written for a replaced credential is ignored and removed; the new
   const { writeSignedOut, readSignedOut } = await import('../scripts/lib/governance.mjs');
   const dir = makeStateDir();
   const env = { NOBLECLOAK_STATE_DIR: dir };
-  seedAuth(dir, { accessToken: 'old-access', refreshToken: 'refresh-old' });
+  seedAuth(dir, { issuer: DEFAULT_ISSUER, accessToken: 'old-access', refreshToken: 'refresh-old' });
   writeSignedOut('invalid_grant', env); // bound to the current (old) credential
   assert.ok(readSignedOut(env), 'bound to the credential on disk → honoured');
   // Login completes after the marker was written (its clearSignedOut lost the race).
-  seedAuth(dir, { accessToken: 'new-access', refreshToken: 'refresh-new' });
+  seedAuth(dir, { issuer: DEFAULT_ISSUER, accessToken: 'new-access', refreshToken: 'refresh-new' });
   assert.equal(readSignedOut(env), null);
   assert.equal(existsSync(join(dir, 'signed-out.json')), false, 'the stale marker is deleted');
   const r = await usableBearer(env);
@@ -644,7 +700,7 @@ test('a marker written for a replaced credential is ignored and removed; the new
 test('a legacy marker without a fingerprint is still honoured', async () => {
   const { readSignedOut } = await import('../scripts/lib/governance.mjs');
   const dir = makeStateDir();
-  seedAuth(dir);
+  seedAuth(dir, { issuer: DEFAULT_ISSUER });
   writeFileSync(join(dir, 'signed-out.json'), JSON.stringify({ since: 'x', reason: 'invalid_grant', checkedAt: Date.now() }));
   assert.ok(readSignedOut({ NOBLECLOAK_STATE_DIR: dir }));
 });
@@ -656,7 +712,7 @@ test('expired token + transient refresh failure: 20 emits cost one grant, not tw
   const stub = await startStub();
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_COO_URL: stub.url };
   try {
     for (let i = 0; i < 20; i += 1) assert.equal(await emitAuditEvent({ id: `e${i}:pre`, subject: 's' }, env), EMIT_SPILLED);
@@ -675,7 +731,7 @@ test('the refresh backoff expires, and a success clears it', async () => {
   const stub = await startStub();
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000 });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000 });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url, NOBLECLOAK_REFRESH_BACKOFF_MS: '1000' };
   try {
     assert.equal((await usableBearer(env)).reason, 'token-expired');
@@ -696,12 +752,12 @@ test('a refresh backoff for a replaced credential is ignored', async () => {
   const stub = await startStub();
   stub.tokenStatus = 503;
   const dir = makeStateDir();
-  seedAuth(dir, { expiresAt: Date.now() - 60_000, refreshToken: 'refresh-old' });
+  seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000, refreshToken: 'refresh-old' });
   const env = { NOBLECLOAK_STATE_DIR: dir, NOBLECLOAK_ISSUER: stub.url };
   try {
     await usableBearer(env);
     assert.equal(grants(stub).length, 1);
-    seedAuth(dir, { expiresAt: Date.now() - 60_000, refreshToken: 'refresh-new' });
+    seedAuth(dir, { issuer: stub.url, expiresAt: Date.now() - 60_000, refreshToken: 'refresh-new' });
     stub.tokenStatus = 200;
     assert.equal((await usableBearer(env)).token, 'refreshed-token');
     assert.equal(grants(stub).length, 2);
