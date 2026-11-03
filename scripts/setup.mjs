@@ -8,26 +8,17 @@
  *
  * `detect` (the default) prints what it found, the candidate skills (bundled under setup-skills/noblecloak-setup-*) and the
  * `--source` to pass to the chosen skill's apply.mjs. It writes nothing into the project. Exit codes: 0 at least one
- * candidate can run, 5 a candidate can run but a package version differs from the lock (see below), 2 the project is neither a Next.js App Router app nor a LangGraph project, 4 candidates exist
- * but none can run (a package tarball is missing from the release), 1 anything else (gh failed, checksum mismatch).
+ * candidate can run, 5 a candidate can run but a package version differs from the lock (see below), 2 the project is
+ * neither a Next.js App Router app nor a LangGraph project, 4 candidates exist but none can run (a package tarball is
+ * missing from the `--source` directory), 1 anything else.
  *
- * Pre-release package source: nothing @noblecloak/* is on npm before the public release, so the skills' apply.mjs
- * installs from tarballs. Unless `--source` is given, `detect` downloads each package's tarball from the latest
- * published `spec-v*` release of the repository SOURCES.packages names for it (scripts/sync-skills.mjs) with `gh`,
- * checks every tarball against that release's SHA256SUMS, and passes one directory holding all of them. The
- * directory is the plugin's package cache, `<state dir>/packages/<tag>/` (by default
- * ~/.noblecloak/claude-plugin/packages/<tag>/; when the repositories' latest tags differ, <tag> is the distinct tags
- * joined with '+'), never a temp directory: apply.mjs records the tarball paths in the
- * project's package.json (`file:` dependencies and overrides), so they must outlive this run. Each run downloads all
- * four packages afresh and replaces that tag's directory, so its contents do not depend on the project; nothing
- * removes it. After the public release, set SOURCE_FROM_RELEASE to false: the default becomes `registry` and the
- * release path (resolveReleaseSource) is deleted.
- *
- * The skills are pinned (SKILLS.lock) but the release is the latest one, so for a tarball source `detect` compares
- * each needed tarball's version with the lock's `packages` (the versions at the pinned commit) and prints a
- * `WARNING:` line for each that differs and exits 5 instead of 0 (the candidates are still printed). Passing
- * `--accept-version-drift` (after the builder agreed to the mismatch) keeps the WARNING lines but exits 0. The registry
- * source is not checked. Exit 5 leaves the package cache in place, like every other exit.
+ * Package source: the default is `registry`, the public npm registry, where every @noblecloak/* package the skills
+ * install is published; the skills' apply.mjs then installs them by name. `--source <dir>` installs instead from
+ * tarballs in a directory you already have (noblecloak-<name>-<version>.tgz files): for a tarball source `detect`
+ * compares each needed tarball's version with the lock's `packages` (the versions the bundled skills were written
+ * against, SKILLS.lock) and prints a `WARNING:` line for each that differs and exits 5 instead of 0 (the candidates
+ * are still printed). Passing `--accept-version-drift` (after the builder agreed to the mismatch) keeps the WARNING
+ * lines but exits 0. The registry source is not checked.
  *
  * `propose` runs the langgraph skill's propose.mjs with NC_PROPOSER_TOKEN set to the plugin's govern-audience user
  * token (the one /noblecloak-propose-tool uses; minted or refreshed through the plugin's PKCE flow). The token goes
@@ -39,12 +30,10 @@
  * plugin's token (the deployment rejected it, or it is not a user token), the stored govern token is dropped, as
  * /noblecloak-propose-tool does on a 401, so the next run signs in afresh instead of replaying it.
  *
- * Env: NOBLECLOAK_GH names the gh binary (default `gh`) and NOBLECLOAK_SETUP_SKILLS_DIR the skills directory
- * (default: this plugin's `setup-skills/`); both are test seams.
+ * Env: NOBLECLOAK_SETUP_SKILLS_DIR names the skills directory (default: this plugin's `setup-skills/`); a test seam.
  */
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -53,35 +42,20 @@ import {
   AuthDiscoveryError,
   approvalsUrl,
   dropTokenFor,
-  ensureStateDir,
   governResourceIndicator,
   loadAuthState,
   resolveResourceIndicator,
-  stateDir,
   TokenRefreshError,
 } from './lib/governance.mjs';
 import { governToken } from './lib/govern-token.mjs';
 import { SignInError } from './lib/pkce-flow.mjs';
 import { BUNDLE_DIR, DIR_PREFIX, LOCK_NAME, SOURCES } from './sync-skills.mjs';
 
-/** Pre-release switch: true resolves the package source from a release; false means `registry` (see header). */
-export const SOURCE_FROM_RELEASE = true;
-
 const PLUGIN_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const MODULE_SKILLS = ['approvals', 'permissions', 'connections'];
 export const LANGGRAPH_PACKAGES = ['@langchain/langgraph', 'langchain'];
 /** The tarballs (by package) each kind of skill installs; mirrors TARBALL_PACKAGES in the skills' apply.mjs. */
 export const REQUIRED_TARBALLS = { module: ['react', 'client', 'theme'], langgraph: ['langgraph', 'client'] };
-/** A spec release tag; strict, since the tag names a directory in the package cache. */
-const RELEASE_TAG = /^spec-v\d[0-9A-Za-z.+_-]*$/;
-/** Every package a setup skill installs; the release download takes all of them, whatever the project is. */
-export const RELEASE_PACKAGES = [...new Set([...REQUIRED_TARBALLS.module, ...REQUIRED_TARBALLS.langgraph])];
-
-/** The package cache: one verified directory per release tag. */
-export function packageCacheDir(env = process.env) {
-  return join(stateDir(env), 'packages');
-}
-
 /** What the project at `dir` is: { module, langgraph, evidence }. Reads package.json and looks for app/ or src/app/. */
 export function detectProject(dir) {
   const evidence = [];
@@ -98,25 +72,6 @@ export function detectProject(dir) {
   const found = LANGGRAPH_PACKAGES.filter((name) => name in deps);
   if (found.length > 0) evidence.push(found.join(' + '));
   return { module, langgraph: found.length > 0, evidence };
-}
-
-const gh = (env) => env.NOBLECLOAK_GH ?? 'gh';
-
-function runGh(env, args) {
-  const r = spawnSync(gh(env), args, { encoding: 'utf-8' });
-  if (r.error) throw new Error(`gh could not run: ${r.error.message}`);
-  if (r.status !== 0) throw new Error(`gh ${args.slice(0, 2).join(' ')} failed: ${(r.stderr || '').trim() || `exit ${r.status}`}`);
-  return r.stdout;
-}
-
-/** Parses `sha256sum` output ("<hex>  <name>") into { name: hex }. */
-export function parseSums(text) {
-  const sums = {};
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^([0-9a-f]{64}) [ *](.+)$/.exec(line.trim());
-    if (m) sums[m[2]] = m[1];
-  }
-  return sums;
 }
 
 const TARBALL_NAME = /^noblecloak-([a-z][a-z-]*?)-(\d.*)\.tgz$/;
@@ -156,71 +111,6 @@ export function versionMismatches(dir, need, locked) {
     .map((name) => ({ name, locked: locked[name], found: found[name] }));
 }
 
-/** RELEASE_PACKAGES grouped by the release repository SOURCES names for each: [[repo, [package, ...]], ...] by repo. */
-export function releaseGroups(packages = RELEASE_PACKAGES, sources = SOURCES) {
-  const groups = new Map();
-  for (const name of packages) {
-    const repo = sources.packages[name]?.repo;
-    if (!repo) throw new Error(`SOURCES.packages has no entry for ${name}`);
-    groups.set(repo, [...(groups.get(repo) ?? []), name]);
-  }
-  return [...groups].sort(([a], [b]) => (a < b ? -1 : 1));
-}
-
-/**
- * Downloads, from each release repository (releaseGroups), the latest published spec-v* release's tarballs for the
- * packages that repository supplies into a staging directory in the package cache, checks each against that
- * release's SHA256SUMS, then moves them all to `<cache>/<tag>/` (replacing an earlier copy); `<tag>` is the distinct
- * tags joined with '+' (one tag when the repositories agree or there is one repository). The directory's SHA256SUMS
- * is the releases' files concatenated. Returns { dir, tag, packages } (the names present). Throws, removing the
- * staging directory and leaving any earlier `<tag>/` in place, when gh fails, SHA256SUMS is missing, or a tarball is
- * absent from it or differs.
- */
-export function resolveReleaseSource({ env = process.env, sources = SOURCES }) {
-  const groups = releaseGroups(RELEASE_PACKAGES, sources).map(([repo, names]) => {
-    const listed = JSON.parse(
-      runGh(env, ['release', 'list', '--repo', repo, '--exclude-drafts', '--exclude-pre-releases', '--limit', '50', '--json', 'tagName'])
-    );
-    const tag = listed.map((r) => r.tagName).find((t) => RELEASE_TAG.test(t));
-    if (!tag) throw new Error(`${repo} has no published spec-v* release`);
-    return { repo, names, tag };
-  });
-  const tag = [...new Set(groups.map((g) => g.tag))].join('+');
-  ensureStateDir(env);
-  const cache = packageCacheDir(env);
-  mkdirSync(cache, { recursive: true, mode: 0o700 });
-  const dir = mkdtempSync(join(cache, '.staging-'));
-  try {
-    const sumsText = [];
-    groups.forEach(({ repo, names, tag: groupTag }, i) => {
-      const part = join(dir, `.part-${i}`);
-      mkdirSync(part);
-      const patterns = ['SHA256SUMS', ...names.map((p) => `noblecloak-${p}-*.tgz`)].flatMap((p) => ['--pattern', p]);
-      runGh(env, ['release', 'download', groupTag, '--repo', repo, '--dir', part, ...patterns]);
-      if (!existsSync(join(part, 'SHA256SUMS'))) throw new Error(`release ${groupTag} of ${repo} has no SHA256SUMS`);
-      const text = readFileSync(join(part, 'SHA256SUMS'), 'utf-8');
-      const sums = parseSums(text);
-      for (const file of readdirSync(part).filter((f) => f.endsWith('.tgz'))) {
-        const expected = sums[file];
-        if (!expected) throw new Error(`${file} is not listed in release ${groupTag}'s SHA256SUMS`);
-        const actual = createHash('sha256').update(readFileSync(join(part, file))).digest('hex');
-        if (actual !== expected) throw new Error(`${file} does not match release ${groupTag}'s SHA256SUMS`);
-        renameSync(join(part, file), join(dir, file));
-      }
-      sumsText.push(text);
-      rmSync(part, { recursive: true, force: true });
-    });
-    writeFileSync(join(dir, 'SHA256SUMS'), sumsText.join(''));
-    const final = join(cache, tag);
-    rmSync(final, { recursive: true, force: true });
-    renameSync(dir, final);
-    return { dir: final, tag, packages: tarballPackages(final) };
-  } catch (err) {
-    rmSync(dir, { recursive: true, force: true });
-    throw err;
-  }
-}
-
 /** Candidate skills for a detection result, each with whether the available packages let it run. */
 export function candidates(detected, available) {
   const make = (kind, skills) => {
@@ -237,8 +127,8 @@ function skillsDir(env) {
   return env.NOBLECLOAK_SETUP_SKILLS_DIR ?? join(PLUGIN_ROOT, BUNDLE_DIR);
 }
 
-/** Runs detection and source resolution. Returns { detected, found, source, tag, exit, lines }. */
-export function runDetect({ project, source, env = process.env, resolveRelease = resolveReleaseSource, acceptVersionDrift = false }) {
+/** Runs detection and source resolution. Returns { detected, found, source, exit, lines }. */
+export function runDetect({ project, source = 'registry', env = process.env, acceptVersionDrift = false }) {
   const detected = detectProject(project);
   const lines = [`Project: ${project}`];
   if (!detected.module && !detected.langgraph) {
@@ -248,19 +138,8 @@ export function runDetect({ project, source, env = process.env, resolveRelease =
   }
   lines.push(`Detected: ${[detected.module && 'Next.js App Router app', detected.langgraph && 'LangGraph project'].filter(Boolean).join(' AND ')} (${detected.evidence.join('; ')}).`);
   const need = [...new Set([...(detected.module ? REQUIRED_TARBALLS.module : []), ...(detected.langgraph ? REQUIRED_TARBALLS.langgraph : [])])];
-  let resolved;
-  let from;
-  if (source !== undefined) {
-    resolved = source === 'registry' ? { source: 'registry', packages: need } : { source: resolve(source), packages: tarballPackages(resolve(source)) };
-    from = source === 'registry' ? 'registry' : `directory ${resolved.source}`;
-  } else if (SOURCE_FROM_RELEASE) {
-    const release = resolveRelease({ env });
-    resolved = { source: release.dir, packages: release.packages, tag: release.tag };
-    from = `release ${release.tag}, checksums verified against SHA256SUMS`;
-  } else {
-    resolved = { source: 'registry', packages: need };
-    from = 'registry';
-  }
+  const resolved = source === 'registry' ? { source: 'registry', packages: need } : { source: resolve(source), packages: tarballPackages(resolve(source)) };
+  const from = source === 'registry' ? 'the public npm registry' : `directory ${resolved.source}`;
   const found = candidates(detected, resolved.packages);
   lines.push(`Source: --source ${resolved.source} (${from}).`);
   for (const c of found) {
@@ -283,7 +162,7 @@ export function runDetect({ project, source, env = process.env, resolveRelease =
     lines.push('Exit 5: do not run a skill yet. If the builder agrees to the different version, re-run with --accept-version-drift.');
   }
   if (found.filter((c) => c.runnable).length > 1) lines.push('Both kinds match: ask the builder which one to set up.');
-  return { detected, found, source: resolved.source, tag: resolved.tag, exit: !found.some((c) => c.runnable) ? 4 : drift && !acceptVersionDrift ? 5 : 0, lines };
+  return { detected, found, source: resolved.source, exit: !found.some((c) => c.runnable) ? 4 : drift && !acceptVersionDrift ? 5 : 0, lines };
 }
 
 /**
@@ -385,7 +264,7 @@ async function main(argv) {
     console.log(out.lines.join('\n'));
     return out.exit;
   } catch (err) {
-    console.error(`Could not resolve the package source — ${err.message}`);
+    console.error(`Could not resolve the package source: ${err.message}`);
     return 1;
   }
 }
