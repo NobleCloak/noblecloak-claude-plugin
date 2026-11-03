@@ -26,7 +26,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -197,9 +196,9 @@ export function ensureStateDir(env = process.env) {
   return dir;
 }
 
-// ── One-time migration from the pre-rename state locations ────────────────
+// ── One-time migration from an earlier state location ─────────────────────
 //
-// Before the rename the state lived in `<PLUGIN_ROOT>/.local` (a directory-source
+// Earlier versions kept the state in `<PLUGIN_ROOT>/.local` (a directory-source
 // install: the source checkout; a marketplace install: the versioned cache
 // directory). Files moved from there; lock files stay (they belong to a live
 // process).
@@ -260,22 +259,14 @@ function moveStateFile(from, to) {
   chmodSync(to, 0o600);
 }
 
-/** Pre-rename state directories that exist, in the brief's order, de-duplicated. */
-function legacyCandidates({ env, pluginRoot, home }) {
+/** Earlier state directories that exist: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`, de-duplicated. */
+function legacyCandidates({ env, pluginRoot }) {
   const out = [];
   const add = (dir, explicit = false) => {
     if (dir && existsSync(dir) && !out.some((c) => c.dir === dir)) out.push({ dir, explicit });
   };
   add(env.NOBLECLOAK_MIGRATE_FROM, true);
   add(join(pluginRoot, '.local'));
-  const cacheRoot = join(home, '.claude', 'plugins', 'cache', 'bianoble', 'bianoble');
-  let versions = [];
-  try {
-    versions = readdirSync(cacheRoot).sort();
-  } catch {
-    // no marketplace cache
-  }
-  for (const version of versions) add(join(cacheRoot, version, '.local'));
   return out;
 }
 
@@ -286,10 +277,9 @@ function legacyCandidates({ env, pluginRoot, home }) {
  * holds the `migrated-from` marker of an earlier migration (so logging out
  * after a migration is not undone by a sign-in left in another candidate).
  *
- * Candidates, in order: `NOBLECLOAK_MIGRATE_FROM`, `<pluginRoot>/.local`, then
- * `~/.claude/plugins/cache/bianoble/bianoble/<version>/.local`. Exactly one is
- * migrated: the explicit `NOBLECLOAK_MIGRATE_FROM` when it holds an `auth.json`,
- * otherwise the candidate whose `auth.json` is newest. Files in a candidate that
+ * Candidates, in order: `NOBLECLOAK_MIGRATE_FROM`, then `<pluginRoot>/.local`.
+ * Exactly one is migrated: the explicit `NOBLECLOAK_MIGRATE_FROM` when it holds
+ * an `auth.json`, otherwise the candidate whose `auth.json` is newest. Files in a candidate that
  * was not chosen are left alone and named in the message; so are files whose
  * destination already exists. The old directory is never deleted.
  *
@@ -311,7 +301,7 @@ export function migrateLegacyState({ env = process.env, pluginRoot = PLUGIN_ROOT
   if (existsSync(join(dest, MIGRATION_MARKER))) {
     return { status: 'done', source: null, moved: [], leftBehind: [], message: null };
   }
-  const candidates = legacyCandidates({ env, pluginRoot, home }).filter((c) => c.dir !== dest);
+  const candidates = legacyCandidates({ env, pluginRoot }).filter((c) => c.dir !== dest);
   if (candidates.length === 0) return { status: 'none', source: null, moved: [], leftBehind: [], message: null };
 
   const withAuth = candidates
@@ -391,7 +381,7 @@ let lazyMigrationTried = false;
 
 /**
  * A hook can run before the first SessionStart refresh of a session that
- * predates the rename; without this it would see an empty state directory and
+ * predates the state directory move; without this it would see an empty state directory and
  * report "not logged in". Tries the migration once per process, silently apart
  * from its one-line message on stderr.
  */
@@ -1850,16 +1840,6 @@ export function isNobleCloakMcpTool(toolName, env = process.env) {
     return Object.prototype.hasOwnProperty.call(config.mcpServers, serverId);
   }
   return FALLBACK_NOBLECLOAK_SERVER_IDS.includes(serverId);
-}
-
-/**
- * Names (sorted, never values) of `BIANOBLE_*` variables set in `env`. The plugin
- * reads `NOBLECLOAK_*` only, so these have no effect; /noblecloak-status lists them.
- */
-export function legacyEnvVarNames(env = process.env) {
-  return Object.keys(env)
-    .filter((name) => name.startsWith('BIANOBLE_'))
-    .sort();
 }
 
 /** Offline side-effect level for fail-mode selection (see mirror note above). */

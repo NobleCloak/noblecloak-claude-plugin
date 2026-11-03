@@ -19,7 +19,6 @@ import {
   compactAuditQueueAndLedger,
   decodeJwtClaims,
   gatewayUrl,
-  legacyEnvVarNames,
   localAuditStatus,
   readAuditHealth,
   recordDeadLetter,
@@ -247,10 +246,8 @@ test('probeCatalog sends the bearer token and both Accept types', async () => {
 
 function runStatus(env) {
   return new Promise((resolve) => {
-    // Drop any ambient BIANOBLE_* so the legacy-variable warning only reflects `env`.
-    const ambient = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BIANOBLE_')));
     const child = spawn(process.execPath, [STATUS_PATH], {
-      env: { ...ambient, ...env },
+      env: { ...process.env, ...env },
     });
     let stdout = '';
     let stderr = '';
@@ -494,21 +491,21 @@ test('dead-letter tail trim is COUNTED (deadLettered.trimmed) and shown by statu
   assert.match(stdout, new RegExp(`45 of them trimmed from the local forensic tail .*newest ${AUDIT_DEAD_LETTER_RETENTION}`));
 });
 
-// ── .mcp.json server key + legacy BIANOBLE_* warning ──────────────────────
+// ── .mcp.json server key ──────────────────────────────────────────────────
 
-test('gatewayUrl and resolveResourceIndicator read the `noblecloak` key and ignore the old `bianoble` key', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bn-key-'));
+test('gatewayUrl and resolveResourceIndicator read the `noblecloak` server key only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nc-key-'));
   const current = join(dir, 'current.json');
-  const legacy = join(dir, 'legacy.json');
+  const other = join(dir, 'other.json');
   writeFileSync(current, JSON.stringify({ mcpServers: { noblecloak: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } } }));
-  writeFileSync(legacy, JSON.stringify({ mcpServers: { bianoble: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } } }));
+  writeFileSync(other, JSON.stringify({ mcpServers: { other: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } } }));
   assert.equal(gatewayUrl({ NOBLECLOAK_MCP_FILE: current }), 'https://mcp.example.test/v1/mcp');
   assert.equal(resolveResourceIndicator({ NOBLECLOAK_MCP_FILE: current }), 'https://mcp.example.test');
-  assert.equal(gatewayUrl({ NOBLECLOAK_MCP_FILE: legacy }), null);
-  assert.equal(resolveResourceIndicator({ NOBLECLOAK_MCP_FILE: legacy }), null);
+  assert.equal(gatewayUrl({ NOBLECLOAK_MCP_FILE: other }), null);
+  assert.equal(resolveResourceIndicator({ NOBLECLOAK_MCP_FILE: other }), null);
 });
 
-test('status reports the gateway URL from the `noblecloak` key, and "not configured" for the old key', async () => {
+test('status reports the gateway URL from the `noblecloak` key, and "not configured" for any other key', async () => {
   const stateDir = makeStateDir({
     accessToken: makeJwt({ sub: SUB, org_id: ORG }),
     refreshToken: 'r',
@@ -519,36 +516,9 @@ test('status reports the gateway URL from the `noblecloak` key, and "not configu
   });
   const ok = await runStatus({ NOBLECLOAK_STATE_DIR: stateDir, ...withMcpFile('https://mcp.example.test/v1/mcp') });
   assert.match(ok.stdout, /MCP gateway: https:\/\/mcp\.example\.test\/v1\/mcp/);
-  const dir = mkdtempSync(join(tmpdir(), 'bn-key-'));
-  const legacyFile = join(dir, '.mcp.json');
-  writeFileSync(legacyFile, JSON.stringify({ mcpServers: { bianoble: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } } }));
-  const old = await runStatus({ NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_MCP_FILE: legacyFile });
-  assert.match(old.stdout, /MCP gateway: not configured/);
-});
-
-test('legacyEnvVarNames lists BIANOBLE_* names only, sorted, never values', () => {
-  assert.deepEqual(legacyEnvVarNames({ BIANOBLE_STATE_DIR: '/secret', BIANOBLE_COO_URL: 'x', NOBLECLOAK_STATE_DIR: 'y', PATH: 'z' }), [
-    'BIANOBLE_COO_URL',
-    'BIANOBLE_STATE_DIR',
-  ]);
-  assert.deepEqual(legacyEnvVarNames({ NOBLECLOAK_STATE_DIR: 'y' }), []);
-});
-
-test('status warns about leftover BIANOBLE_* variables (names, not values) on every exit path, and is silent without them', async () => {
-  const signedOutDir = makeStateDir(); // no auth.json → "Not connected" path
-  const warned = await runStatus({ NOBLECLOAK_STATE_DIR: signedOutDir, BIANOBLE_COO_URL: 'https://leak.example', BIANOBLE_STATE_DIR: '/old' });
-  assert.match(warned.stdout, /Warning: BIANOBLE_COO_URL, BIANOBLE_STATE_DIR are set but have no effect/);
-  assert.doesNotMatch(warned.stdout, /leak\.example/);
-  const expiredDir = makeStateDir({
-    accessToken: makeJwt({ sub: SUB, org_id: ORG }),
-    refreshToken: 'r',
-    expiresAt: Date.now() - 1000,
-    authenticatedAt: new Date().toISOString(),
-    orgId: ORG,
-    sub: SUB,
-  });
-  const warnedAuthed = await runStatus({ NOBLECLOAK_STATE_DIR: expiredDir, BIANOBLE_ISSUER: 'x' });
-  assert.match(warnedAuthed.stdout, /Warning: BIANOBLE_ISSUER is set but has no effect/);
-  const clean = await runStatus({ NOBLECLOAK_STATE_DIR: signedOutDir });
-  assert.doesNotMatch(clean.stdout, /Warning: BIANOBLE_/);
+  const dir = mkdtempSync(join(tmpdir(), 'nc-key-'));
+  const otherFile = join(dir, '.mcp.json');
+  writeFileSync(otherFile, JSON.stringify({ mcpServers: { other: { type: 'http', url: 'https://mcp.example.test/v1/mcp' } } }));
+  const missing = await runStatus({ NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_MCP_FILE: otherFile });
+  assert.match(missing.stdout, /MCP gateway: not configured/);
 });

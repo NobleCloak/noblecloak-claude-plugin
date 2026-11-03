@@ -31,7 +31,6 @@ import {
   cooBaseUrl,
   isEnforceMode,
   issuerBaseUrl,
-  legacyEnvVarNames,
   loadAuthState,
   loadMcpConfig,
   localAuditStatus,
@@ -117,15 +116,6 @@ const migratedFrom = readMigrationMarker();
 if (migratedFrom && !migrationMessage) console.log(`State migrated from ${migratedFrom.source} (${migratedFrom.at ?? 'unknown time'}).`);
 console.log(`Issuer: ${issuerBaseUrl()} (discovery: /.well-known/oauth-authorization-server)`);
 console.log(`Governance: COO ${cooBaseUrl()} — ${isEnforceMode() ? 'ENFORCE' : 'audit-only'} mode`);
-
-const legacyVars = legacyEnvVarNames();
-if (legacyVars.length > 0) {
-  console.log(
-    `Warning: ${legacyVars.join(', ')} ${legacyVars.length === 1 ? 'is' : 'are'} set but ` +
-      `${legacyVars.length === 1 ? 'has' : 'have'} no effect. The plugin reads NOBLECLOAK_* variables only; ` +
-      'rename each BIANOBLE_ prefix to NOBLECLOAK_.'
-  );
-}
 
 if (!auth) {
   console.log('Status: Not connected');

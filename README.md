@@ -65,20 +65,16 @@ The plugin keeps its sign-in and undelivered audit records in
 plugin update or reinstall does not sign you out. `~/.noblecloak/` is shared
 with other NobleCloak tools, hence the subdirectory.
 
-**Upgrading from the `bianoble` plugin.** The first session start (or
-`/noblecloak-login` or `/noblecloak-status`) moves the old state in, once, when the
-new directory has no `auth.json` and no `migrated-from` marker (so
-`/noblecloak-logout` stays logged out; it migrates first, then clears). It looks in `NOBLECLOAK_MIGRATE_FROM` (set it if
-you moved or renamed your checkout), in `<plugin>/.local`, and in
-`~/.claude/plugins/cache/bianoble/bianoble/*/.local`, and moves the files from the
-one holding `auth.json` (the explicit path first, otherwise the newest). It keeps
-mode `0600`, records the source in `migrated-from`, prints one line naming it,
-and never deletes the old directory. It does nothing when `NOBLECLOAK_STATE_DIR`
-is set. The OAuth client registered by the old plugin is reused, so the consent
-screen keeps showing the old client name ("Claude Code — BiaNoble plugin") until the
-client is registered again. The old environment variables are not read
-any more: every `BIANOBLE_*` is now `NOBLECLOAK_*`, and `/noblecloak-status` warns
-about any `BIANOBLE_*` still set.
+**State from an earlier install location.** An earlier version of this plugin
+kept its state in `<plugin>/.local`. The first session start (or
+`/noblecloak-login` or `/noblecloak-status`) moves it in, once, when the new
+directory has no `auth.json` and no `migrated-from` marker (so
+`/noblecloak-logout` stays logged out; it migrates first, then clears). It looks
+in `NOBLECLOAK_MIGRATE_FROM` (set it if you moved or renamed your checkout) and in
+`<plugin>/.local`, and moves the files from the one holding `auth.json` (the
+explicit path first). It keeps mode `0600`, records the source in
+`migrated-from`, prints one line naming it, and never deletes the old directory.
+It does nothing when `NOBLECLOAK_STATE_DIR` is set.
 
 ## Privacy posture in one paragraph
 
