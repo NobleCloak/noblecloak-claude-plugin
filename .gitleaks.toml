@@ -1,0 +1,16 @@
+title = "NobleCloak Claude Code plugin gitleaks config"
+
+[extend]
+useDefault = true
+
+# Known false positives of the generic-api-key rule:
+#  - the sha256 fields of setup-skills/SKILLS.lock;
+#  - one doc-comment line in scripts/lib/governance.mjs ("Discovery failures, 5xx/408/429/other 4xx").
+[[allowlists]]
+description = "Known false positives in the generic-api-key rule"
+targetRules = ["generic-api-key"]
+condition = "OR"
+# (^|/): gitleaks matches the path as scanned, which is absolute for `gitleaks dir <abs path>`.
+paths = ['''(^|/)setup-skills/SKILLS\.lock$''']
+regexTarget = "line"
+regexes = ['''Discovery failures, 5xx/408/429/other 4xx''']

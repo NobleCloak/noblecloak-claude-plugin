@@ -1,0 +1,17 @@
+{
+  "name": "noblecloak-claude-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "login": "node scripts/login.mjs",
+    "status": "node scripts/status.mjs",
+    "refresh": "node scripts/refresh.mjs",
+    "logout": "node scripts/logout.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "open": "^10.1.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "noblecloak",
+  "version": "0.1.0",
+  "description": "Connect Claude Code to your NobleCloak workspace — access business planning, commerce, and platform tools via MCP",
+  "author": {
+    "name": "NobleCloak",
+    "url": "https://github.com/NobleCloak"
+  },
+  "homepage": "https://docs.noblecloak.com/docs/guides/claude-plugin/",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/NobleCloak/noblecloak-claude-plugin",
+  "keywords": ["noblecloak", "mcp", "business-planning", "ai-tools"],
+  "privacyPolicyUrl": "https://docs.noblecloak.com/docs/guides/claude-plugin/privacy-and-governance"
+}

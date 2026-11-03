@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "noblecloak": {
+      "type": "http",
+      "url": "https://mcp.beta.shared.bianoble.com/v1/mcp"
+    }
+  }
+}

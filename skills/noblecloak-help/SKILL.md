@@ -1,0 +1,54 @@
+---
+name: NobleCloak Help
+description: Provides contextual help about NobleCloak MCP tools and connection management. Activates when users ask about NobleCloak features, connection status, or available tools.
+---
+
+## NobleCloak Connection Management
+
+### The Gateway
+NobleCloak connects Claude to a single **COO MCP gateway** that surfaces all entitled tools. Tool names are prefixed to make the domain obvious:
+
+- `cofounder_*` — business planning (journeys, tasks, notes, knowledge)
+- `core_*` — platform admin (users, orgs, profiles, invitations)
+- `commerce_*` — subscriptions, billing, entitlements, catalog
+- `int_*` — connected third-party services (Gmail, Calendar, GitHub, …)
+
+### Getting Connected
+If MCP tools are not available, guide the user:
+1. Run `/noblecloak-login` to authenticate with their NobleCloak workspace
+2. Restart Claude Code after login completes
+3. NobleCloak tools will then be available in the conversation
+
+### Checking Status
+Run `/noblecloak-status` to see:
+- Whether the user is connected (governance session)
+- Token validity and expiration
+- The configured MCP gateway URL (the live MCP connection is owned by Claude Code — see `/mcp`)
+
+### Troubleshooting
+- **`Tool '<name>' not found in catalog` on every call?** Almost always an **org mismatch** or a stale session snapshot (org-mismatch class). Every gateway tool call resolves against the catalog of the org your session's token is bound to — and the authorization server picks your **default org invisibly** at login (no org picker yet). Run `/noblecloak-status` and read two lines: `Organization (hooks token): <uuid>` (is that the workspace you meant?) and `Catalog: N tools visible` (N=0 ⇒ every dispatch will fail). Fix: switch your default org (or connect the MCP service in THAT org), re-run `/noblecloak-login`, then reconnect the MCP server from `/mcp` — the MCP session holds its **own** token (see the two-token note below) and must re-mint too.
+- **Tools not showing up?** Run `/noblecloak-login`, then restart Claude Code (the MCP server connects via Claude Code's native OAuth; reconnect from `/mcp` if needed).
+- **Token expired?** The plugin auto-refreshes the governance session on session start; you can run `/noblecloak-connect` to force a governance-token refresh. (This does not re-fetch MCP config — there isn't any; MCP reconnect is via `/mcp`.)
+- **Wrong organization?** The AS binds your session to your default org automatically. Change the default org in the NobleCloak shell, then run `/noblecloak-login` AND reconnect the MCP server from `/mcp` (two separate tokens — both must re-mint).
+- **Want to disconnect?** Run `/noblecloak-logout` to clear your governance session. Claude Code owns the MCP connection — disconnect the `noblecloak` server from `/mcp` to drop it.
+- **Only integration tools visible (no `cofounder_*`)?** The workspace may not have the Cofounder product entitled. Point the user to app.beta.shared.bianoble.com/setup.
+- **Integration tool says "not connected"?** The user needs to connect the service at app.beta.shared.bianoble.com/setup (Integrations step). Once connected, tools work automatically on next session.
+
+### The Two Tokens (why /noblecloak-status labels the org "hooks token")
+The plugin holds TWO independently minted tokens from the same authorization server:
+1. **Governance-hooks token** (`~/.noblecloak/claude-plugin/auth.json`, or `$NOBLECLOAK_STATE_DIR/auth.json`; written by `/noblecloak-login`) — drives local policy resolution + audit events.
+2. **Claude Code's native MCP OAuth token** — owns the live gateway session (`/mcp`).
+
+Both go through the same AS default-org selection, so they normally bind the same org — but they CAN drift (e.g. default org changed between the two logins): local audits would then run against org A while gateway calls resolve org B's catalog. `/noblecloak-status` can only see the hooks token, so it labels the org accordingly. If the catalog probe succeeds but live MCP calls still fail with "not found in catalog", suspect the seam: reconnect the MCP server from `/mcp` to re-mint its token.
+
+### Available Tool Domains
+- **Cofounder**: Business planning, journeys, tasks, notes, knowledge search, agent enablement.
+- **Core**: Users, organizations, profiles, invitations, settings.
+- **Commerce**: Subscriptions, billing, entitlements, catalog, metering.
+- **Integrations**: Gmail (messages, drafts, send), Google Calendar (events), GitHub (repos, PRs, reviews).
+
+### Planning Work
+For sustained journey/task work (weekly reviews, backlog triage, unblocking), the `noblecloak-planner` agent plus the **NobleCloak Journey & Task Work** skill provide domain fluency. Slash commands:
+- `/noblecloak-journey [title]` — list or inspect journeys
+- `/noblecloak-tasks [title]` — show open tasks for a journey, grouped by stage
+- `/noblecloak-next-step` — recommend the single highest-leverage next move

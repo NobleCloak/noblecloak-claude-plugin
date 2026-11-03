@@ -1,0 +1,13 @@
+NobleCloak Claude Code plugin
+Copyright 2026 NobleCloak
+
+This product includes software developed by NobleCloak (https://www.noblecloak.com).
+
+== Third-party ==
+Runtime dependency of the plugin's scripts. It is not copied into this repository or bundled into any
+file; it is installed from the npm registry (`npm ci`) under its own licence.
+
+open - MIT - https://github.com/sindresorhus/open
+  Opens the browser for the sign-in flow. Its own dependencies (bundle-name, default-browser,
+  default-browser-id, define-lazy-prop, is-inside-container, is-wsl, run-applescript, wsl-utils, is-docker)
+  are MIT-licensed; `package-lock.json` pins the exact versions.
