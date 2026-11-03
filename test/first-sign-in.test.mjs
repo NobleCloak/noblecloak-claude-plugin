@@ -1,9 +1,9 @@
 /**
  * First sign-in creates the account: the deployment provisions a user (with a
  * personal workspace) the first time they sign in, so the plugin says so where
- * a new person looks. login.mjs needs a browser, so its half is a source scan:
- * the note is printed before the browser is opened. The command doc and the
- * README Install section carry the same sentence.
+ * a new person looks. test/login.test.mjs runs login.mjs and checks that it
+ * prints the note before it opens the browser; the command doc and the README
+ * Install section carry the same sentence.
  */
 
 import { test } from 'node:test';
@@ -21,15 +21,6 @@ test('the note says signing in creates an account with a personal workspace', ()
     FIRST_SIGN_IN_NOTE,
     'If you do not have a NobleCloak account yet, signing in creates one, with a personal workspace.'
   );
-});
-
-test('login.mjs prints the note before it opens the browser', () => {
-  const src = read('scripts', 'login.mjs');
-  const note = src.indexOf('console.log(FIRST_SIGN_IN_NOTE)');
-  const opening = src.indexOf("console.log('Opening browser");
-  const open = src.indexOf('open(authUrl.toString())');
-  assert.ok(note > 0, 'login.mjs prints FIRST_SIGN_IN_NOTE');
-  assert.ok(note < opening && note < open, 'before the browser is opened');
 });
 
 test('the login command and the README Install section carry the same sentence', () => {

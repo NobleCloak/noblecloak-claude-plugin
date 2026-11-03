@@ -13,11 +13,14 @@
  *
  * The MCP connection itself is owned by Claude Code's native OAuth against the
  * committed, tokenless .mcp.json; this script does NOT write .mcp.json.
+ *
+ * For tests only: NOBLECLOAK_NO_BROWSER=1 prints the URL without opening a
+ * browser, and NOBLECLOAK_REDIRECT_PORT replaces the registered port (19284),
+ * as in scripts/lib/pkce-flow.mjs.
  */
 
 import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
-import open from 'open';
 import {
   AuthDiscoveryError,
   DEFAULT_ISSUER,
@@ -41,7 +44,7 @@ import {
 const API_BASE_URL = process.env.NOBLECLOAK_API_URL || DEFAULT_ISSUER;
 // The OAuth client_id is resolved at login time via ensureRegisteredClientId
 // (DCR-registered + persisted, or NOBLECLOAK_CLIENT_ID override) — not a constant.
-const REDIRECT_PORT = 19284;
+const REDIRECT_PORT = Number(process.env.NOBLECLOAK_REDIRECT_PORT) || 19284;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
 // Canonical scope set per the MCP native-OAuth design (2026-06-25): `mcp`
 // (the AS's own advertised gateway-access scope) + `offline_access` (refresh).
@@ -296,9 +299,14 @@ async function login() {
       console.log('Opening browser for NobleCloak authentication...');
       console.log(`If the browser doesn't open, visit: ${authUrl.toString()}`);
 
-      open(authUrl.toString()).catch(() => {
-        // If open fails, user can manually visit the URL
-      });
+      // `open` is imported lazily: a headless run (NOBLECLOAK_NO_BROWSER=1) never needs it.
+      if (process.env.NOBLECLOAK_NO_BROWSER !== '1') {
+        import('open')
+          .then(({ default: open }) => open(authUrl.toString()))
+          .catch(() => {
+            // If open fails, user can manually visit the URL
+          });
+      }
     });
 
     // Timeout after 5 minutes
