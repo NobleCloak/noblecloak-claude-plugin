@@ -1,27 +1,19 @@
 /**
- * scripts/setup.mjs: project detection, package-source resolution against a stubbed gh, and the token hand-off to
- * the langgraph skill's propose.mjs.
+ * scripts/setup.mjs: project detection, the package source (the registry by default, or a directory of tarballs),
+ * and the token hand-off to the langgraph skill's propose.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { detectProject, parseSums, releaseGroups, resolveReleaseSource as resolveFrom, runDetect, runPropose } from '../scripts/setup.mjs';
-import { SOURCES } from '../scripts/sync-skills.mjs';
+import { detectProject, runDetect, runPropose } from '../scripts/setup.mjs';
 import { makeStateDir, REPO_ROOT, startStub } from './helpers.mjs';
-
-/** Every package from one release repository: the shape these tests' single fake gh answers, whatever SOURCES says. */
-const ONE_REPO = 'example/one-repo';
-const ONE = { ...SOURCES, packages: Object.fromEntries(Object.entries(SOURCES.packages).map(([name, e]) => [name, { ...e, repo: ONE_REPO }])) };
-const resolveReleaseSource = ({ env, sources = ONE }) => resolveFrom({ env, sources });
 
 const SETUP_PATH = join(REPO_ROOT, 'scripts', 'setup.mjs');
 const mkTmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
-const sha = (text) => createHash('sha256').update(text).digest('hex');
 
 /** A project directory with the given package.json deps and directories. */
 function makeProject({ deps = {}, dirs = [] } = {}) {
@@ -66,176 +58,19 @@ test('detection: a dependency in devDependencies counts; no package.json is neit
 });
 
 test('detection: neither prints no candidates and exits 2 without resolving a source', () => {
-  const out = runDetect({
-    project: makeProject({ deps: { express: '5' } }),
-    resolveRelease: () => assert.fail('must not download for a project no skill applies to'),
-  });
+  const out = runDetect({ project: makeProject({ deps: { express: '5' } }) });
   assert.equal(out.exit, 2);
   assert.deepEqual(out.found, []);
   assert.match(out.lines.join('\n'), /No setup skill applies/);
 });
 
-// ── source resolution against a stubbed gh ───────────────────────────────────
-
-/**
- * A fake gh. `releases` is [{tag, assets: {file: content}, sums?: string|null}], or { '<owner/name>': [...] } to
- * answer per `--repo`; `gh release list` prints the tags, `gh release download <tag> --dir D --pattern P...` copies the matching assets and the SUMS text.
- */
-function makeFakeGh({ releases, fail = false }) {
-  const root = mkTmp('fake-gh-');
-  const shape = (list) =>
-    list.map(({ tag, assets, sums }) => ({
-      tag,
-      assets: { ...assets, ...(sums === null ? {} : { SHA256SUMS: sums ?? Object.entries(assets).map(([f, c]) => `${sha(c)}  ${f}`).join('\n') + '\n' }) },
-    }));
-  const data = Array.isArray(releases) ? shape(releases) : Object.fromEntries(Object.entries(releases).map(([repo, list]) => [repo, shape(list)]));
-  writeFileSync(join(root, 'data.json'), JSON.stringify(data));
-  const bin = join(root, 'gh');
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
-const fs = require('node:fs'); const path = require('node:path');
-const args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(join(root, 'calls.log'))}, JSON.stringify(args) + '\\n');
-const all = JSON.parse(fs.readFileSync(${JSON.stringify(join(root, 'data.json'))}, 'utf8'));
-const data = Array.isArray(all) ? all : all[args[args.indexOf('--repo') + 1]] || [];
-if (${JSON.stringify(fail)}) { console.error('HTTP 401: bad credentials'); process.exit(1); }
-const flag = (n) => args[args.indexOf(n) + 1];
-if (args[1] === 'list') { console.log(JSON.stringify(data.map((r) => ({ tagName: r.tag })))); process.exit(0); }
-if (args[1] === 'download') {
-  const release = data.find((r) => r.tag === args[2]);
-  const patterns = args.flatMap((a, i) => (a === '--pattern' ? [args[i + 1]] : []));
-  for (const [file, content] of Object.entries(release.assets)) {
-    if (patterns.some((p) => new RegExp('^' + p.replace(/\\*/g, '.*') + '$').test(file))) fs.writeFileSync(path.join(flag('--dir'), file), content);
-  }
-  process.exit(0);
-}
-process.exit(9);
-`
-  );
-  chmodSync(bin, 0o755);
-  return { bin, root, calls: () => readFileSync(join(root, 'calls.log'), 'utf-8').trim().split('\n').map((l) => JSON.parse(l)) };
-}
-
-const ASSETS = {
-  'noblecloak-react-0.8.2.tgz': 'react',
-  'noblecloak-client-0.10.0.tgz': 'client',
-  'noblecloak-theme-0.1.1.tgz': 'theme',
-  'noblecloak-langgraph-0.3.8.tgz': 'langgraph',
-  'noblecloak-spec-0.9.0.tgz': 'spec',
-};
-/** gh is the fake; the package cache goes under a throwaway state dir, never the real ~/.noblecloak. */
-const envFor = (gh, state = makeStateDir()) => ({ ...process.env, NOBLECLOAK_GH: gh.bin, NOBLECLOAK_STATE_DIR: state });
-const cacheOf = (env) => join(env.NOBLECLOAK_STATE_DIR, 'packages');
-const cacheEntries = (env) => (existsSync(cacheOf(env)) ? readdirSync(cacheOf(env)).sort() : []);
-
-test('source: downloads every skill package of the latest spec-v* release into the per-tag cache, not a temp dir', () => {
-  const gh = makeFakeGh({ releases: [{ tag: 'tools-v1', assets: {} }, { tag: 'spec-v0.9.0', assets: ASSETS }, { tag: 'spec-v0.8.0', assets: {} }] });
-  const env = envFor(gh);
-  const r = resolveReleaseSource({ env });
-  assert.equal(r.tag, 'spec-v0.9.0');
-  assert.equal(r.dir, join(cacheOf(env), 'spec-v0.9.0'));
-  assert.deepEqual(r.packages.sort(), ['client', 'langgraph', 'react', 'theme']);
-  assert.deepEqual(readdirSync(r.dir).sort(), [
-    'SHA256SUMS',
-    'noblecloak-client-0.10.0.tgz',
-    'noblecloak-langgraph-0.3.8.tgz',
-    'noblecloak-react-0.8.2.tgz',
-    'noblecloak-theme-0.1.1.tgz',
-  ]);
-  assert.deepEqual(cacheEntries(env), ['spec-v0.9.0'], 'no staging directory is left');
-  const download = gh.calls().find((c) => c[1] === 'download');
-  assert.deepEqual(download.slice(0, 5), ['release', 'download', 'spec-v0.9.0', '--repo', ONE_REPO]);
-  assert.deepEqual(download.filter((_, i) => download[i - 1] === '--pattern').sort(), [
-    'SHA256SUMS',
-    'noblecloak-client-*.tgz',
-    'noblecloak-langgraph-*.tgz',
-    'noblecloak-react-*.tgz',
-    'noblecloak-theme-*.tgz',
-  ]);
-});
-
-test('source: with no sources argument the download goes to every release repository SOURCES.packages names', () => {
-  // The array-shaped fake answers for any --repo, so this holds under the private and the exported SOURCES alike.
-  const gh = makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS }] });
-  const r = resolveFrom({ env: envFor(gh) });
-  assert.deepEqual(r.packages.sort(), ['client', 'langgraph', 'react', 'theme']);
-  const repos = gh.calls().filter((c) => c[1] === 'download').map((c) => c[c.indexOf('--repo') + 1]);
-  assert.deepEqual([...new Set(repos)].sort(), [...new Set(Object.values(SOURCES.packages).map((e) => e.repo))].sort());
-});
-
-test('source: a re-run replaces the tag directory in place, at the same path', () => {
-  const gh = makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS }] });
-  const env = envFor(gh);
-  const first = resolveReleaseSource({ env });
-  writeFileSync(join(first.dir, 'stale.tgz'), 'left from an earlier download');
-  const second = resolveReleaseSource({ env });
-  assert.equal(second.dir, first.dir, 'the path apply.mjs recorded stays valid');
-  assert.ok(!existsSync(join(second.dir, 'stale.tgz')));
-  assert.ok(existsSync(join(second.dir, 'noblecloak-client-0.10.0.tgz')));
-});
-
-test('source: a tarball that differs from SHA256SUMS fails, leaves no staging copy and keeps the earlier verified copy', () => {
-  const env = envFor(makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS }] }));
-  const good = resolveReleaseSource({ env });
-  const sums = `${sha('something else')}  noblecloak-client-0.10.0.tgz\n`;
-  const bad = { ...env, NOBLECLOAK_GH: makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS, sums }] }).bin };
-  assert.throws(() => resolveReleaseSource({ env: bad }), /noblecloak-client-0\.10\.0\.tgz does not match release spec-v0\.9\.0's SHA256SUMS/);
-  assert.deepEqual(cacheEntries(env), ['spec-v0.9.0']);
-  assert.ok(existsSync(join(good.dir, 'noblecloak-client-0.10.0.tgz')), 'a failed download does not break projects using the earlier copy');
-});
-
-test('source: a tarball missing from SHA256SUMS, and a release without SHA256SUMS, both fail', () => {
-  const unlisted = envFor(makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS, sums: `${sha('react')}  noblecloak-react-0.8.2.tgz\n` }] }));
-  assert.throws(() => resolveReleaseSource({ env: unlisted }), /not listed in release spec-v0\.9\.0's SHA256SUMS/);
-  assert.deepEqual(cacheEntries(unlisted), []);
-  const none = envFor(makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS, sums: null }] }));
-  assert.throws(() => resolveReleaseSource({ env: none }), /has no SHA256SUMS/);
-  assert.deepEqual(cacheEntries(none), []);
-});
-
-test('source: gh failing, no spec-v* release, and a tag that is not a plain name, are errors', () => {
-  assert.throws(() => resolveReleaseSource({ env: envFor(makeFakeGh({ releases: [], fail: true })) }), /bad credentials/);
-  assert.throws(() => resolveReleaseSource({ env: envFor(makeFakeGh({ releases: [{ tag: 'tools-v1', assets: {} }] })) }), /no published spec-v\* release/);
-  const odd = envFor(makeFakeGh({ releases: [{ tag: 'spec-v1/../../escape', assets: ASSETS }] }));
-  assert.throws(() => resolveReleaseSource({ env: odd }), /no published spec-v\* release/);
-  assert.deepEqual(cacheEntries(odd), []);
-});
-
-test('parseSums reads sha256sum text, text and binary markers', () => {
-  const h = 'a'.repeat(64);
-  assert.deepEqual(parseSums(`${h}  one.tgz\n${h} *two.tgz\nnot a line\n`), { 'one.tgz': h, 'two.tgz': h });
-});
-
-test('runDetect: a langgraph project whose release has no langgraph tarball is blocked with a clear message (exit 4)', () => {
-  const gh = makeFakeGh({ releases: [{ tag: 'spec-v0.8.0', assets: { 'noblecloak-client-0.9.0.tgz': 'c', 'noblecloak-react-0.8.1.tgz': 'r' } }] });
-  const env = envFor(gh);
-  const out = runDetect({ project: makeProject(LANGGRAPH), env, resolveRelease: resolveReleaseSource });
-  assert.equal(out.exit, 4);
-  assert.match(out.lines.join('\n'), /BLOCKED langgraph: the package source has no noblecloak-langgraph-<version>\.tgz\. Stop and tell the builder/);
-  // The cache is shared by projects: a module project may already point at this tag's react/client tarballs.
-  assert.ok(existsSync(join(cacheOf(env), 'spec-v0.8.0', 'noblecloak-react-0.8.1.tgz')), 'a blocked run does not remove the cached release');
-});
-
-test('runDetect: both kinds, langgraph tarball present, asks the builder; module alone does not ask', () => {
-  const gh = makeFakeGh({ releases: [{ tag: 'spec-v0.9.0', assets: ASSETS }] });
-  const env = envFor(gh);
-  const both = runDetect({ project: makeProject({ deps: { ...NEXT_APP.deps, ...LANGGRAPH.deps }, dirs: NEXT_APP.dirs }), env, acceptVersionDrift: true, resolveRelease: resolveReleaseSource });
-  const modOnly = runDetect({ project: makeProject(NEXT_APP), env, acceptVersionDrift: true, resolveRelease: resolveReleaseSource });
-  assert.equal(both.exit, 0);
-  assert.match(both.lines.join('\n'), /Both kinds match: ask the builder/);
-  assert.match(both.lines.join('\n'), /Candidate module: approvals \(.*noblecloak-setup-approvals.SKILL\.md\), permissions .*connections/);
-  assert.equal(modOnly.exit, 0);
-  assert.doesNotMatch(modOnly.lines.join('\n'), /ask the builder/);
-  assert.ok(modOnly.lines.join('\n').includes(`--source ${join(cacheOf(env), 'spec-v0.9.0')} (release spec-v0.9.0, checksums verified`));
-  assert.equal(modOnly.source, both.source, 'every project gets the same per-tag directory');
-});
+// ── package source ───────────────────────────────────────────────────────────
 
 test('runDetect: --source <dir> skips the download and is checked for the tarballs', () => {
   const dir = mkTmp('own-source-');
   writeFileSync(join(dir, 'noblecloak-langgraph-1.0.0.tgz'), 'x');
   writeFileSync(join(dir, 'noblecloak-client-1.0.0.tgz'), 'x');
-  const out = runDetect({ project: makeProject(LANGGRAPH), source: dir, acceptVersionDrift: true, resolveRelease: () => assert.fail('no download with --source') });
+  const out = runDetect({ project: makeProject(LANGGRAPH), source: dir, acceptVersionDrift: true });
   assert.equal(out.exit, 0);
   assert.equal(out.source, dir);
   const module = runDetect({ project: makeProject(NEXT_APP), source: dir, acceptVersionDrift: true });
@@ -272,10 +107,15 @@ test('runDetect: matching versions, and the registry source, print no WARNING an
   assert.doesNotMatch(runDetect({ project: makeProject(LANGGRAPH), source: 'registry', env: {} }).lines.join('\n'), /WARNING/);
 });
 
-test('runDetect: --source registry passes through (the post-release default)', () => {
-  const out = runDetect({ project: makeProject(NEXT_APP), source: 'registry', resolveRelease: () => assert.fail('no download') });
-  assert.equal(out.exit, 0);
-  assert.equal(out.source, 'registry');
+test('runDetect: the registry is the default source, and --source registry says the same', () => {
+  const byDefault = runDetect({ project: makeProject(NEXT_APP) });
+  assert.equal(byDefault.exit, 0);
+  assert.equal(byDefault.source, 'registry');
+  assert.match(byDefault.lines.join('\n'), /Source: --source registry \(the public npm registry\)\./);
+  assert.ok(byDefault.found.every((c) => c.runnable), 'every candidate runs from the registry');
+  const explicit = runDetect({ project: makeProject(NEXT_APP), source: 'registry' });
+  assert.equal(explicit.source, 'registry');
+  assert.deepEqual(explicit.lines.slice(1), byDefault.lines.slice(1), 'the same output after the project line');
 });
 
 // ── token hand-off ───────────────────────────────────────────────────────────
@@ -568,66 +408,4 @@ test('setup.mjs CLI: a version mismatch exits 5, --accept-version-drift exits 0'
   assert.match(refused.stdout, /WARNING/);
   const accepted = await runSetup(['--project', project, '--source', dir, '--accept-version-drift'], { env, cwd: project });
   assert.equal(accepted.code, 0, accepted.stdout + accepted.stderr);
-});
-
-// ── packages drawn from two release repositories ─────────────────────────────
-
-const SECOND = 'example/second-repo';
-/** SOURCES with the langgraph tarball coming from a second repository. */
-const SPLIT = { ...ONE, packages: { ...ONE.packages, langgraph: { repo: SECOND, dir: 'x' } } };
-
-test('releaseGroups: one group per release repository, the packages each supplies', () => {
-  assert.deepEqual(releaseGroups(['react', 'client', 'theme', 'langgraph'], ONE), [[ONE_REPO, ['react', 'client', 'theme', 'langgraph']]]);
-  assert.deepEqual(releaseGroups(['react', 'client', 'theme', 'langgraph'], SPLIT), [
-    [ONE_REPO, ['react', 'client', 'theme']],
-    [SECOND, ['langgraph']],
-  ].sort(([a], [b]) => (a < b ? -1 : 1)));
-  // The default is SOURCES itself: every package is placed, in one or more groups.
-  assert.deepEqual(releaseGroups().flatMap(([, names]) => names).sort(), ['client', 'langgraph', 'react', 'theme']);
-  assert.throws(() => releaseGroups(['nope']), /no entry for nope/);
-});
-
-test('source: with packages in two repositories each tarball comes from its own repository\'s release, into one directory', () => {
-  const main = ONE_REPO;
-  const gh = makeFakeGh({
-    releases: {
-      [main]: [{ tag: 'spec-v0.9.0', assets: Object.fromEntries(Object.entries(ASSETS).filter(([, v]) => v !== 'langgraph')) }],
-      [SECOND]: [{ tag: 'spec-v0.4.0', assets: { 'noblecloak-langgraph-0.3.8.tgz': 'langgraph', 'noblecloak-client-9.9.9.tgz': 'must not be taken' } }],
-    },
-  });
-  const env = envFor(gh);
-  const r = resolveReleaseSource({ env, sources: SPLIT });
-  assert.deepEqual(r.packages.sort(), ['client', 'langgraph', 'react', 'theme']);
-  assert.equal(r.tag, [...new Set([main, SECOND].sort().map((repo) => (repo === main ? 'spec-v0.9.0' : 'spec-v0.4.0')))].join('+'));
-  assert.deepEqual(readdirSync(r.dir).sort(), [
-    'SHA256SUMS',
-    'noblecloak-client-0.10.0.tgz',
-    'noblecloak-langgraph-0.3.8.tgz',
-    'noblecloak-react-0.8.2.tgz',
-    'noblecloak-theme-0.1.1.tgz',
-  ], 'the second repository supplies only langgraph');
-  const downloads = gh.calls().filter((c) => c[1] === 'download');
-  assert.deepEqual(downloads.map((c) => [c[2], c[4]]).sort(), [['spec-v0.4.0', SECOND], ['spec-v0.9.0', main]].sort());
-  const second = downloads.find((c) => c[4] === SECOND);
-  assert.deepEqual(second.filter((_, i) => second[i - 1] === '--pattern').sort(), ['SHA256SUMS', 'noblecloak-langgraph-*.tgz']);
-  assert.deepEqual(cacheEntries(env), [r.tag], 'no staging directory is left');
-});
-
-test('source: a tarball that fails its own repository\'s SHA256SUMS in a two-repository download fails the whole download', () => {
-  const main = ONE_REPO;
-  const gh = makeFakeGh({
-    releases: {
-      [main]: [{ tag: 'spec-v0.9.0', assets: Object.fromEntries(Object.entries(ASSETS).filter(([, v]) => v !== 'langgraph')) }],
-      [SECOND]: [{ tag: 'spec-v0.4.0', assets: { 'noblecloak-langgraph-0.3.8.tgz': 'langgraph' }, sums: `${sha('other')}  noblecloak-langgraph-0.3.8.tgz\n` }],
-    },
-  });
-  const env = envFor(gh);
-  assert.throws(() => resolveReleaseSource({ env, sources: SPLIT }), /noblecloak-langgraph-0\.3\.8\.tgz does not match release spec-v0\.4\.0's SHA256SUMS/);
-  assert.deepEqual(cacheEntries(env), [], 'nothing is left in the cache');
-});
-
-test('source: a repository without a spec-v* release is named in the error', () => {
-  const main = ONE_REPO;
-  const gh = makeFakeGh({ releases: { [main]: [{ tag: 'spec-v0.9.0', assets: ASSETS }], [SECOND]: [] } });
-  assert.throws(() => resolveReleaseSource({ env: envFor(gh), sources: SPLIT }), new RegExp(`${SECOND} has no published spec-v\\* release`));
 });

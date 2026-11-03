@@ -42,9 +42,9 @@ import { parseArgs } from 'node:util';
 
 // SOURCES-BEGIN
 /**
- * Where the skills and the release tarballs come from. `skills[name]`: the repository and the directory in it that
- * holds the skill. `packages[name]`: the repository whose `spec-v*` releases carry the package's tarball (setup.mjs)
- * and the directory in that repository whose package.json gives the version (this script). The skill keys are
+ * Where the skills and the packages are authored. `skills[name]`: the repository and the directory in it that
+ * holds the skill. `packages[name]`: the repository and the directory in it whose package.json gives the version
+ * the lock records (this script); the packages themselves are installed from the public npm registry (setup.mjs). The skill keys are
  * quoted so the scope guard in test/propose-tool.test.mjs, which greps scripts/ for the text "approvals" followed
  * by a colon, does not read the first one as a scope.
  */
