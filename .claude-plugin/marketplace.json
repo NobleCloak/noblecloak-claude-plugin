@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "noblecloak",
-  "description": "NobleCloak plugins for Claude Code — connect your workspace to governed AI tooling (MCP, agents, governance hooks).",
+  "description": "NobleCloak plugins for Claude Code \u2014 connect your workspace to governed AI tooling (MCP, agents, governance hooks).",
   "owner": {
     "name": "NobleCloak",
     "url": "https://github.com/NobleCloak"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "noblecloak",
-      "description": "Connect Claude Code to your NobleCloak workspace — OAuth login, entitled MCP servers, and governed local execution.",
+      "description": "Connect Claude Code to your NobleCloak workspace \u2014 OAuth login, entitled MCP servers, and governed local execution.",
       "source": "./",
       "author": {
         "name": "NobleCloak",
@@ -17,7 +17,11 @@
       },
       "homepage": "https://docs.noblecloak.com/docs/guides/claude-plugin/",
       "license": "Apache-2.0",
-      "keywords": ["noblecloak", "mcp", "business-planning", "ai-tools"]
+      "keywords": [
+        "noblecloak",
+        "mcp",
+        "ai-tools"
+      ]
     }
   ]
 }

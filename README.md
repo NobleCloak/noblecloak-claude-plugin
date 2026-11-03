@@ -30,9 +30,9 @@ sends. The rest of this file is the orientation for people working *on* the plug
 
 | | |
 |---|---|
-| Commands | `/noblecloak-login`, `/noblecloak-logout`, `/noblecloak-status`, `/noblecloak-connect`, `/noblecloak-propose-tool`, `/noblecloak-setup`, plus workspace commands for journeys, tasks, and next steps |
-| Agents | `noblecloak-assistant` (workspace) and `noblecloak-planner` (sustained planning) |
-| Skills | `noblecloak-help` and `noblecloak-journey-work`. The setup skills `noblecloak-setup-{approvals,permissions,connections,langgraph}` are bundled in `setup-skills/`, outside the auto-discovered `skills/`, so they run only through `/noblecloak-setup` |
+| Commands | `/noblecloak-login`, `/noblecloak-logout`, `/noblecloak-status`, `/noblecloak-connect`, `/noblecloak-propose-tool`, `/noblecloak-setup` |
+| Agents | `noblecloak-assistant` (your organization's entitled tools through the gateway) |
+| Skills | `noblecloak-help`. The setup skills `noblecloak-setup-{approvals,permissions,connections,langgraph}` are bundled in `setup-skills/`, outside the auto-discovered `skills/`, so they run only through `/noblecloak-setup` |
 | Hooks | `SessionStart` token refresh; `PreToolUse` governance resolve; `PostToolUse` / subagent event reporting |
 | MCP | A committed, **tokenless** `.mcp.json` declaring the gateway. Claude Code owns the live connection via native OAuth — no script writes this file |
 
