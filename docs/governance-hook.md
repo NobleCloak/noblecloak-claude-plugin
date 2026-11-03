@@ -42,8 +42,8 @@ and audited like any other MCP tool.
 whenever `.mcp.json` lists a server named `noblecloak`. Once the plugin ships that server,
 Claude Code names its tools `mcp__plugin_noblecloak_noblecloak__*`, so a plain-form name can
 only come from a server configured independently (user, project or local scope) under the
-name `noblecloak`; in ENFORCE mode such a server skips resolve and the pre-audit record. The
-same holds for `bianoble` before the rename. Restricting the skip to the plugin-prefixed form
+name `noblecloak`; in ENFORCE mode such a server skips resolve and the pre-audit record.
+Restricting the skip to the plugin-prefixed form
 is a product decision and is not made here.
 
 ## Privacy: raw tool input never leaves the machine

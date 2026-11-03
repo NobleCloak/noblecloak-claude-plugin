@@ -2117,7 +2117,11 @@ export function failModeDecision(sideEffectLevel, enforce) {
 //     stays eligible for re-ship on the next drain after COO recovers, because
 //     the worker marks a tool_use_id shipped only on EMIT_DELIVERED.
 
-/** local_execution provenance marker — greppable per brief #3 D2. */
+// The deployment's event contract: its /v1/coo/local/events route rejects a
+// CloudEvents source or type outside its allow-lists (400 unknown_ce_source /
+// unknown_ce_type), and these are the values it lists for this plugin. They
+// change only together with the deployment, which must accept a new value
+// before the plugin sends it.
 export const CE_SOURCE_LOCAL_EXECUTION = 'bianoble/local-execution/claude-code';
 export const CE_TYPE_TOOL_CALL_AUTHORIZED = 'com.bianoble.tool.call.authorized.v1';
 export const CE_TYPE_TOOL_CALL_DENIED = 'com.bianoble.tool.call.denied.v1';

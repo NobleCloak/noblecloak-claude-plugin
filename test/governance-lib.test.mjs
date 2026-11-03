@@ -105,12 +105,12 @@ test('isNobleCloakMcpTool (no .mcp.json): exact fallback server ids only', () =>
 
 test('isNobleCloakMcpTool: installed-plugin form mcp__plugin_noblecloak_<server>__ matches the same ids', () => {
   const absent = { NOBLECLOAK_MCP_FILE: join(makeStateDir(), 'mcp.json') };
-  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__bianoble_read', absent), true);
+  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__search_records', absent), true);
   assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_github__create_issue', absent), false);
   const env = { NOBLECLOAK_MCP_FILE: join(makeStateDir(), 'mcp.json') };
   writeFileSync(env.NOBLECLOAK_MCP_FILE, JSON.stringify({ mcpServers: { noblecloak: { type: 'http', url: 'https://x.test/mcp' } } }));
-  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__bianoble_read', env), true);
-  assert.equal(isNobleCloakMcpTool('mcp__noblecloak__bianoble_read', env), true);
+  assert.equal(isNobleCloakMcpTool('mcp__plugin_noblecloak_noblecloak__search_records', env), true);
+  assert.equal(isNobleCloakMcpTool('mcp__noblecloak__search_records', env), true);
 });
 
 test('the plugin id used for the mcp__plugin_<id>_ prefix is the name in plugin.json', () => {
@@ -924,7 +924,7 @@ test('emitAuditEvent: no bearer token → spills and returns EMIT_SPILLED, no fe
   // No NOBLECLOAK_DEV_TOKEN and no auth.json → getBearerToken returns null. The
   // function must spill WITHOUT attempting a POST (logged-out audit path).
   const env = { NOBLECLOAK_STATE_DIR: stateDir, NOBLECLOAK_COO_URL: 'http://127.0.0.1:0' };
-  const envelope = { id: 'toolu_X:pre', type: 'com.bianoble.tool.call.authorized.v1' };
+  const envelope = { id: 'toolu_X:pre', type: CE_TYPE_TOOL_CALL_AUTHORIZED };
   const status = await emitAuditEvent(envelope, env);
   assert.equal(status, EMIT_SPILLED, 'returns EMIT_SPILLED on the no-token branch');
   const spill = readFileSync(join(stateDir, 'audit-spill.jsonl'), 'utf-8').trim();

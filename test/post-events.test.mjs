@@ -28,10 +28,18 @@ import {
   waitForSpill,
 } from './helpers.mjs';
 
-import { deriveCeId, markPreShipped, AUDIT_SHIPPED_RETENTION } from '../scripts/lib/governance.mjs';
+import {
+  deriveCeId,
+  markPreShipped,
+  AUDIT_SHIPPED_RETENTION,
+  CE_TYPE_TOOL_CALL_AUTHORIZED,
+  CE_TYPE_TOOL_CALL_DENIED,
+} from '../scripts/lib/governance.mjs';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+// The deployment's wire values, pinned literally (see the CE_* constants in governance.mjs).
 const CE_SOURCE = 'bianoble/local-execution/claude-code';
+const TOOL_CALL_TYPES = [CE_TYPE_TOOL_CALL_AUTHORIZED, CE_TYPE_TOOL_CALL_DENIED];
 
 /** A Pre-side audit record (brief #4 shape) for a Bash call that resolved allow. */
 function preRecord(overrides = {}) {
@@ -677,14 +685,14 @@ test('e2e: a session with one subagent fan-out reconstructs to 0 orphans offline
     // Every event hangs off the session root (subject).
     if (b.subject !== SESSION_ID) orphans += 1;
     // A subagent tool call must reference a subagent that started.
-    if (b.type.startsWith('com.bianoble.tool.call') && b.data.agent_id) {
+    if (TOOL_CALL_TYPES.includes(b.type) && b.data.agent_id) {
       if (!subagentIds.has(b.data.agent_id)) orphans += 1;
     }
   }
   assert.equal(orphans, 0, 'no orphan events — every node attaches to the tree');
 
   // Pre↔post pairing: each tool_use_id has exactly one :pre and one :post.
-  const toolCalls = bodies.filter((b) => b.type.startsWith('com.bianoble.tool.call'));
+  const toolCalls = bodies.filter((b) => TOOL_CALL_TYPES.includes(b.type));
   const byTool = {};
   for (const b of toolCalls) {
     const [tid, phase] = b.id.split(':');

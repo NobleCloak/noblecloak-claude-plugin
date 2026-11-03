@@ -160,7 +160,7 @@ test('installed-plugin tool names (mcp__plugin_noblecloak_noblecloak__*) → imm
   const stub = await startStub();
   const stateDir = makeStateDir();
   const result = await runHook(
-    hookInput({ tool_name: 'mcp__plugin_noblecloak_noblecloak__bianoble_read', tool_input: { q: 1 } }),
+    hookInput({ tool_name: 'mcp__plugin_noblecloak_noblecloak__search_records', tool_input: { q: 1 } }),
     stubEnv(stub, stateDir, { NOBLECLOAK_LOCAL_ENFORCE: 'true' })
   );
   await stub.close();
