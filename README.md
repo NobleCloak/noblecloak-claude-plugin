@@ -192,8 +192,9 @@ npm test    # node --test against a local stub HTTP server
 
 Environment variables are documented in
 [`docs/governance-hook.md`](docs/governance-hook.md). The defaults point at the
-production NobleCloak deployment; to use another one, set the `NOBLECLOAK_*`
-variables there (and `NOBLECLOAK_MCP_FILE` for its gateway).
+production NobleCloak deployment; the `NOBLECLOAK_*` variables point the hooks
+and scripts at another one, while Claude Code's own MCP connection always uses
+the gateway in the committed `.mcp.json`.
 
 ## Support
 

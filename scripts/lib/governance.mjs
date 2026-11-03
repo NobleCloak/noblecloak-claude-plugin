@@ -55,8 +55,9 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            endpoint is {base}/v1/coo/local/resolve. Default:
 //                            the same production API host, where the COO API
 //                            is served under /v1/coo.
-//   Another deployment (a non-production one included) is selected by setting
-//   these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE (its gateway).
+//   The hooks and scripts use another deployment (a non-production one
+//   included) when these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE are
+//   set; Claude Code's own MCP connection reads the committed .mcp.json.
 //   NOBLECLOAK_LOCAL_ENFORCE   'true'/'1' flips the PreToolUse adapter from
 //                            audit-only (default) to enforce mode.
 //   NOBLECLOAK_DEV_TOKEN       DEV-ONLY bearer-token override while Core OAuth AS
