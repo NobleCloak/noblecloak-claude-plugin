@@ -14,6 +14,9 @@ plugin from it, and sign in:
 /noblecloak-login
 ```
 
+If you do not have a NobleCloak account yet, signing in creates one, with a
+personal workspace.
+
 Both the marketplace and the plugin are named `noblecloak`. Updates arrive
 through `/plugin marketplace update noblecloak` followed by
 `/plugin update noblecloak@noblecloak`. To install from a local clone instead,

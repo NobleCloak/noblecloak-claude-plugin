@@ -79,6 +79,15 @@ export const DEFAULT_RESOLVE_TIMEOUT_MS = 1500;
 export const RESOLVE_PATH = '/v1/coo/local/resolve';
 /** Audit-event ingest endpoint (brief #5 emitter; brief #3 owns the route). */
 export const EVENTS_PATH = '/v1/coo/local/events';
+/**
+ * Printed by /noblecloak-login before it opens the browser. The deployment
+ * provisions a person who signs in for the first time in the same OAuth flow: a
+ * user and, when the identity provider supplies a name (the usual case), a
+ * personal workspace with the sign-up entitlements. There is no separate
+ * registration page.
+ */
+export const FIRST_SIGN_IN_NOTE =
+  'If you do not have a NobleCloak account yet, signing in creates one, with a personal workspace.';
 
 export function issuerBaseUrl(env = process.env) {
   return stripTrailingSlash(env.NOBLECLOAK_ISSUER || DEFAULT_ISSUER);

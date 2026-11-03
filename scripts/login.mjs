@@ -25,6 +25,7 @@ import {
   decodeJwtClaims,
   discoverAuthServer,
   ensureRegisteredClientId,
+  FIRST_SIGN_IN_NOTE,
   issuerBaseUrl,
   migrateLegacyState,
   resolveResourceIndicator,
@@ -288,6 +289,7 @@ async function login() {
       // rather than failing the login over a bad .mcp.json.
       if (resourceIndicator) authUrl.searchParams.set('resource', resourceIndicator);
 
+      console.log(FIRST_SIGN_IN_NOTE);
       console.log('Opening browser for NobleCloak authentication...');
       console.log(`If the browser doesn't open, visit: ${authUrl.toString()}`);
 

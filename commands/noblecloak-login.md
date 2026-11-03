@@ -5,6 +5,8 @@ description: Log in to your NobleCloak workspace
 
 Run the NobleCloak OAuth login script to authenticate your workspace.
 
+If you do not have a NobleCloak account yet, signing in creates one, with a personal workspace.
+
 Execute this command:
 
 ```bash
