@@ -38,7 +38,9 @@ sends. The rest of this file is the orientation for people working *on* the plug
 
 ## Set up NobleCloak in your project
 
-Run `/noblecloak-setup` in your project. `scripts/setup.mjs` looks at it:
+This needs the plugin installed and signed in first (the [Install](#install) steps above): `/noblecloak-setup`
+is one of the plugin's commands, and the LangGraph path uses your plugin sign-in to open the approval. With that
+done, open the project in Claude Code and run `/noblecloak-setup`. `scripts/setup.mjs` looks at the project:
 
 - `next` plus an `app/` or `src/app/` directory: a Next.js App Router app, so one of the module skills (`approvals`, `permissions`, `connections`).
 - `@langchain/langgraph` or `langchain` in `package.json`: a LangGraph agent, so the `langgraph` skill.
