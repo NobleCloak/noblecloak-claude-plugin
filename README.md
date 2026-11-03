@@ -3,10 +3,28 @@
 Connects Claude Code to your NobleCloak workspace, and applies your
 organization's governance rules to the tool calls in your session.
 
+## Install
+
+In Claude Code, add the NobleCloak marketplace (this repository), install the
+plugin from it, and sign in:
+
+```text
+/plugin marketplace add NobleCloak/noblecloak-claude-plugin
+/plugin install noblecloak@noblecloak
+/noblecloak-login
+```
+
+Both the marketplace and the plugin are named `noblecloak`. Updates arrive
+through `/plugin marketplace update noblecloak` followed by
+`/plugin update noblecloak@noblecloak`. To install from a local clone instead,
+give the first command the clone's path in place of the repository name.
+
+Then, in a project you want governed, run `/noblecloak-setup` (see below).
+
 **📖 Full documentation: <https://docs.noblecloak.com/docs/guides/claude-plugin/>**
 
 That is the source of truth for installing, signing in, and what the plugin
-sends. This file is the orientation for people working *on* the plugin.
+sends. The rest of this file is the orientation for people working *on* the plugin.
 
 ## What it installs
 
@@ -37,19 +55,6 @@ node scripts/sync-skills.mjs --sha <40-hex commit> [--clone <local clone>]
 ```
 
 Without `--clone` it reads the commit with `gh api repos/<repo>/tarball/<sha>`. When `SOURCES` names more than one repository, pass `--sha <owner/name>=<40-hex commit>` once per repository (and `--clone <owner/name>=<dir>` for the clones you have). The lock records, per skill, the repository, sha and path it was copied from, and the `@noblecloak/{react,client,theme,langgraph}` versions at those commits. Each skill's `name` frontmatter is kept; only the directory is prefixed.
-
-## Install
-
-Add this repository as a marketplace, then install the plugin from it. From a
-local clone (replace the path with where you cloned it):
-
-```text
-/plugin marketplace add /path/to/noblecloak-claude-plugin
-/plugin install noblecloak@noblecloak
-```
-
-Then run `/noblecloak-login`. Both the marketplace and the plugin are named
-`noblecloak`.
 
 ## State
 
