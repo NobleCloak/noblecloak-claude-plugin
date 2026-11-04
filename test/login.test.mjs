@@ -141,6 +141,23 @@ test('login-hint: no argument leaves login_hint off the authorize URL', async ()
   }
 });
 
+test('login-hint: a blank argument (the quoted empty $ARGUMENTS) is treated as no argument', async () => {
+  const stub = await asStub();
+  try {
+    const { env } = await loginEnv(stub);
+    const { authUrl, result } = await runLogin(env, ['']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(authUrl.searchParams.has('login_hint'), false);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('login-hint: the command template single-quotes $ARGUMENTS so the shell cannot interpret it', () => {
+  const md = readFileSync(join(REPO_ROOT, 'commands', 'noblecloak-login.md'), 'utf-8');
+  assert.ok(md.includes("scripts/login.mjs '$ARGUMENTS'"));
+});
+
 test('login-hint: a valid email is sent as login_hint exactly', async () => {
   const stub = await asStub();
   try {

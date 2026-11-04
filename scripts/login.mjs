@@ -327,9 +327,13 @@ async function login(loginHint) {
 const USAGE = 'Usage: /noblecloak-login [you@yourcompany.com]';
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
-/** The optional email argument, or null when absent. Exits 2 on anything else. */
+/**
+ * The optional email argument, or null when absent. Exits 2 on anything else.
+ * The command template quotes $ARGUMENTS, so no argument arrives as one blank
+ * string; that counts as absent.
+ */
 function parseLoginHint(args) {
-  if (args.length === 0) return null;
+  if (args.length === 0 || (args.length === 1 && args[0].trim() === '')) return null;
   if (args.length > 1 || !EMAIL_SHAPE.test(args[0])) {
     console.error(USAGE);
     process.exit(2);

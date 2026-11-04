@@ -10,7 +10,7 @@ If you do not have a NobleCloak account yet, signing in creates one, with a pers
 Execute this command:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/login.mjs $ARGUMENTS
+node ${CLAUDE_PLUGIN_ROOT}/scripts/login.mjs '$ARGUMENTS'
 ```
 
 Staff of an organisation that signs in with corporate SSO: `/noblecloak-login you@yourcompany.com`.
