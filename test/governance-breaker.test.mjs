@@ -668,6 +668,7 @@ test('docs list 413 payload_too_large as permanent and 400 bad_request as retrie
   for (const f of ['docs/governance-hook.md', 'commands/noblecloak-status.md']) {
     const src = readFileSync(join(REPO_ROOT, f), 'utf-8');
     assert.match(src, /413[^\n]*`payload_too_large`/, f);
+    if (f.endsWith('governance-hook.md')) assert.match(src, /^\|[^\n]*`tenant_run_mismatch`[^\n]*413 with code `payload_too_large`[^\n]*\*\*permanent\*\*/m, 'permanent table row');
     assert.match(src, /`bad_request`/, f);
     assert.doesNotMatch(src, /does not (?:send|emit) `validation_error`/, f);
   }
