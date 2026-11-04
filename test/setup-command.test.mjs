@@ -15,7 +15,7 @@ test('front-matter names the command', () => {
 test('every bash line runs scripts/setup.mjs, and the token never appears on a command line', () => {
   assert.ok(lines.length >= 3);
   for (const line of lines) {
-    assert.match(line, /^node \$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/setup\.mjs( propose --plan <plan\.json>( --dry-run)?)?$/);
+    assert.match(line, /^node \$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/setup\.mjs( propose --plan <plan\.json>( --dry-run)?| service-principal)?$/);
     assert.doesNotMatch(line, /NC_TOKEN|NC_PROPOSER_TOKEN|Bearer/);
   }
 });

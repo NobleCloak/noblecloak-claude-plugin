@@ -1,0 +1,368 @@
+/**
+ * `setup.mjs service-principal`: creates the agent's own service principal with the published @noblecloak/cli, filling
+ * in the deployment values (authorization server, admin API audience, govern audience) so the builder does not have to.
+ *
+ * The CLI signs the administrator in itself (its own PKCE loopback flow), generates the key pair locally, and writes the
+ * credential file (mode 0600). This module never reads that file and never prints key material: it prints only the
+ * fields of the CLI's `--json` result it names (`sp_id`, `path`).
+ */
+import { spawn } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+
+import { discoverAuthServer, governResourceIndicator, loadAuthState, tokenIdentity } from './governance.mjs';
+
+/** The exact CLI release this plugin drives; the flags below are the ones this version documents. */
+export const CLI_PACKAGE = '@noblecloak/cli';
+export const CLI_VERSION = '0.1.2';
+
+/** The admin API audience by authorization-server issuer. The server does not advertise it (CLI README), so it is carried here. */
+export const ADMIN_AUDIENCE_BY_AUTH_ISSUER = new Map([['https://auth.noblecloak.com', 'https://admin-api.noblecloak.com']]);
+
+export class ServicePrincipalError extends Error {
+  constructor(message, exit = 1) {
+    super(message);
+    this.exit = exit;
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const trim = (v) => String(v ?? '').trim();
+const stripSlash = (s) => s.replace(/\/+$/, '');
+
+/** "My App agent" -> "my-app-agent"; never empty. */
+export function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'agent';
+}
+
+/** The admin API audience for the deployment whose authorization server issuer is `authIssuer`; the env override wins. */
+export function adminAudience(authIssuer, env = process.env) {
+  const override = trim(env.NOBLECLOAK_ADMIN_AUDIENCE);
+  if (override) return override;
+  const known = ADMIN_AUDIENCE_BY_AUTH_ISSUER.get(stripSlash(authIssuer));
+  if (known) return known;
+  throw new ServicePrincipalError(
+    `The admin API audience of ${authIssuer} is not known to this plugin (the server does not advertise it). Set NOBLECLOAK_ADMIN_AUDIENCE to it, ask the deployment's operator for the value.`,
+    2
+  );
+}
+
+/** True when `path` (which may not exist yet) lies inside a git work tree: a `.git` entry in its nearest existing directory or above. */
+export function insideGitWorkTree(path) {
+  let dir = dirname(resolve(path));
+  while (!existsSync(dir)) {
+    const up = dirname(dir);
+    if (up === dir) return false;
+    dir = up;
+  }
+  dir = realpathSync(dir);
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return true;
+    const up = dirname(dir);
+    if (up === dir) return false;
+    dir = up;
+  }
+}
+
+/**
+ * What the session's claims say about the user's role in the org. The access token's `organizations` claim ([{ id, role }])
+ * is unverified here and is not what the server decides on (it checks the path organization's membership in its own
+ * database), so a non-admin verdict is only a warning: the CLI's 403 (exit 4) decides.
+ */
+export function adminClaimVerdict(auth, orgId) {
+  const claims = decodeClaims(auth?.accessToken);
+  if (!Array.isArray(claims?.organizations)) return 'unknown';
+  const entry = claims.organizations.find((o) => o && typeof o === 'object' && o.id === orgId);
+  if (!entry) return 'unknown';
+  return entry.role === 'admin' ? 'admin' : 'not-admin';
+}
+
+function decodeClaims(token) {
+  try {
+    return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+/** Resolves every input and refuses on the first problem. Returns the values the CLI is invoked with. Touches no network except AS discovery. */
+export async function resolveServicePrincipalInputs({
+  flags = {},
+  env = process.env,
+  cwd = process.cwd(),
+  home = homedir(),
+  discover = discoverAuthServer,
+}) {
+  const auth = loadAuthState(env);
+  if (!auth) throw new ServicePrincipalError('Not signed in: run /noblecloak-login first.', 3);
+  const orgId = tokenIdentity(auth)?.orgId;
+  if (!orgId) {
+    throw new ServicePrincipalError('The signed-in session carries no organization id. Run /noblecloak-login again, choosing the organization you administer.', 1);
+  }
+  if (!UUID.test(orgId)) {
+    throw new ServicePrincipalError('The signed-in session carries an organization id that is not a valid organization id (a UUID). Run /noblecloak-login again.', 1);
+  }
+  const warning =
+    adminClaimVerdict(auth, orgId) === 'not-admin'
+      ? `warning: your session's claims list you as a non-administrator of organization ${orgId}. The server decides, so continuing; the CLI's administrator sign-in must be an administrator of that organization.`
+      : undefined;
+
+  const name = trim(flags.name) || `${basename(resolve(cwd))} agent`;
+  if (name.length > 255) throw new ServicePrincipalError('--name must be 1 to 255 characters.', 2);
+
+  let expiresInDays;
+  if (flags['expires-in-days'] !== undefined) {
+    expiresInDays = Number(flags['expires-in-days']);
+    if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 365) {
+      throw new ServicePrincipalError('--expires-in-days must be a whole number from 1 to 365.', 2);
+    }
+  }
+
+  const out = flags.out ? resolve(cwd, flags.out) : join(home, '.noblecloak', orgId, `${slugify(name)}.json`);
+  if (existsSyncAny(out)) throw new ServicePrincipalError(`${out} already exists; this command never overwrites a credential. Pass a different --out.`, 2);
+  if (insideGitWorkTree(out)) {
+    throw new ServicePrincipalError(`${out} is inside a git work tree, where the credential could be committed. Pass an --out outside any repository.`, 2);
+  }
+
+  // The CLI refuses this too (exit 2, before sign-in); checked here so the message is the plugin's.
+  // The default directory is created by runServicePrincipal.
+  if (flags.out && !isDirectory(dirname(out))) {
+    throw new ServicePrincipalError(`The parent directory of ${out} does not exist or is not a directory; create it first (nothing was created).`, 2);
+  }
+
+  const governAudience = governResourceIndicator(env);
+  if (!governAudience) throw new ServicePrincipalError('Cannot determine the govern API origin: set NOBLECLOAK_GOVERN_URL.', 1);
+
+  let authUrl;
+  try {
+    authUrl = stripSlash(trim((await discover(env)).issuer));
+  } catch (err) {
+    throw new ServicePrincipalError(`Could not read the authorization server's metadata: ${err.message}`, 1);
+  }
+  if (!authUrl) throw new ServicePrincipalError("The authorization server's metadata has no issuer.", 1);
+
+  return { orgId, name, expiresInDays, out, authUrl, governAudience, adminAudience: adminAudience(authUrl, env), defaultOut: !flags.out, warning };
+}
+
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// lstat so a dangling symlink at the path counts as existing.
+function existsSyncAny(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The exact argv for `npx`. The deployment values go as flags, so no ambient NOBLECLOAK_* variable can change what the CLI targets. */
+export function buildCliArgs(inputs) {
+  // `--flag=value` form: a value that starts with '-' (a name like "-scratch agent") is then not read as another flag.
+  return [
+    '-y',
+    `${CLI_PACKAGE}@${CLI_VERSION}`,
+    'sp',
+    'create',
+    `--org=${inputs.orgId}`,
+    `--name=${inputs.name}`,
+    `--audience=${inputs.governAudience}`,
+    `--out=${inputs.out}`,
+    `--auth-url=${inputs.authUrl}`,
+    `--admin-audience=${inputs.adminAudience}`,
+    ...(inputs.expiresInDays !== undefined ? [`--expires-in-days=${inputs.expiresInDays}`] : []),
+    '--json',
+  ];
+}
+
+/**
+ * Runs npx with stdin and stdout of the CLI under our control: stderr (the sign-in URL and the diagnostics) is shown live
+ * and also kept, so a failure can be mapped. Resolves { status, stdout, stderr, error }.
+ *
+ * While the child runs, SIGINT and SIGTERM are ignored here and reading continues until the child closes: a terminal Ctrl-C
+ * reaches the child too (same process group) and the CLI answers it with its own message ("the server may or may not have
+ * applied the request ...") or its success JSON; dying first would lose that text in an unread pipe. A signal sent only to
+ * this process (a tool timeout's SIGTERM) therefore does not stop the CLI either; the child's own sign-in timeout bounds the wait.
+ */
+export function runCli(args, { env = process.env, stderrSink = process.stderr } = {}) {
+  return new Promise((resolvePromise) => {
+    const child = spawn('npx', args, { env, stdio: ['inherit', 'pipe', 'pipe'] });
+    const ignore = () => {};
+    const signals = ['SIGINT', 'SIGTERM'];
+    for (const sig of signals) process.on(sig, ignore);
+    const release = () => {
+      for (const sig of signals) process.off(sig, ignore);
+    };
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => (stdout += c));
+    child.stderr.on('data', (c) => {
+      stderr += c;
+      stderrSink.write(c);
+    });
+    child.on('error', (error) => {
+      release();
+      resolvePromise({ status: null, stdout, stderr, error });
+    });
+    child.on('close', (status) => {
+      release();
+      resolvePromise({ status, stdout, stderr });
+    });
+  });
+}
+
+/** The last stdout line that parses as a JSON object, or null. */
+export function parseCliJson(stdout) {
+  const lines = String(stdout).split('\n').map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const value = JSON.parse(lines[i]);
+      if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    } catch {
+      // not JSON: keep looking up
+    }
+  }
+  // --json prints one object, possibly pretty-printed over several lines.
+  try {
+    const value = JSON.parse(String(stdout));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+const shellWord = (v) => (/^[\w@%+=:,./-]+$/.test(v) ? v : `'${v.replace(/'/g, "'\\''")}'`);
+
+/** A command that runs as printed: `npx` (the CLI is not on PATH), the pinned version, and the deployment values as flags. */
+function cliCommand({ orgId = '<org id>', authUrl = '<authorization server>', adminAudience = '<admin audience>' }, sub) {
+  return ['npx', '-y', `${CLI_PACKAGE}@${CLI_VERSION}`, 'sp', ...sub, `--org=${shellWord(orgId)}`].join(' ') + ` --auth-url=${shellWord(authUrl)} --admin-audience=${shellWord(adminAudience)}`;
+}
+
+/** The command that lists the organization's service principals. */
+export function listCommand(ctx) {
+  return cliCommand(ctx, ['list']);
+}
+
+/** The command that revokes one principal; `--yes` because there is no terminal to confirm on. */
+export function revokeCommand(ctx, spId) {
+  return `${cliCommand(ctx, ['revoke'])} --sp=${shellWord(spId)} --yes`;
+}
+
+/**
+ * A clear message and exit code for a failed CLI run. `ctx` is { orgId, authUrl, adminAudience }: the recovery commands in
+ * the messages are built from it. The text matched is what @noblecloak/cli 0.1.2 prints on stderr as `error: <message>`.
+ */
+export function mapCliFailure({ status, stderr = '' }, ctx = {}) {
+  // The CLI's line for a 404 with no error body (api.ts: `The server answered ${status} ${code}: ${message}`). A JSON 404
+  // (`404 NOT_FOUND: ...`), an npm registry 404 and any text that merely contains "404" or "not found" do not match.
+  if (status === 1 && /^error: The server answered 404 UNKNOWN: no message$/m.test(stderr)) {
+    return {
+      exit: 1,
+      message:
+        `The deployment answered 404 for the service-principal routes on ${ctx.authUrl || 'the authorization server'}; the principal was not created. Ask the deployment's operator to serve them on the authorization server's origin.`,
+    };
+  }
+  if (status === 1) {
+    // Created on the server, credential not saved (commands.ts orphaned()).
+    // Anchored to the CLI's own line and the id to the UUID format `sp revoke --sp` requires, so text echoed from a server
+    // error cannot put anything but a UUID into the printed command.
+    const orphan = /^error: .*The service principal ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) was created and has no credential file: revoke it with$/im.exec(stderr);
+    if (orphan) {
+      return { exit: 1, message: `The principal ${orphan[1]} was created but its credential file was not saved. To retire it, review and then run:\n  ${revokeCommand(ctx, orphan[1])}` };
+    }
+    if (/was created and has no credential file/.test(stderr)) {
+      return { exit: 1, message: `A principal was created but its credential file was not saved, and its id could not be read from the CLI's message. Find it with:\n  ${listCommand(ctx)}` };
+    }
+    // A create that failed after the request left (api.ts MAYBE_APPLIED).
+    if (/The server may or may not have applied the request/.test(stderr)) {
+      return { exit: 1, message: `The create request failed before an answer arrived; the principal may have been created. Check with:\n  ${listCommand(ctx)}` };
+    }
+  }
+  switch (status) {
+    case 2:
+      return { exit: 2, message: 'The CLI refused the input (see its message above). Nothing was created.' };
+    case 3:
+      // The CLI uses exit 3 for several things; tell them apart by its stderr line.
+      if (/^error: Interrupted\./m.test(stderr)) {
+        return { exit: 1, message: `The request was interrupted; the principal may have been created. Check with:\n  ${listCommand(ctx)}` };
+      }
+      if (/^error: Not signed in: the server answered 401/m.test(stderr)) {
+        return { exit: 1, message: "The admin API refused the administrator's token (check NOBLECLOAK_ADMIN_AUDIENCE). Nothing was created." };
+      }
+      if (/^error: Sign-in /m.test(stderr)) {
+        return { exit: 5, message: 'Sign-in for the administrator did not complete (failed, timed out or cancelled). Run it again.' };
+      }
+      return { exit: 1, message: 'The CLI exited 3 (not signed in) without saying why; see its message above.' };
+    case 4:
+      return { exit: 4, message: 'You are not an administrator of that organization. Ask an administrator to run this.' };
+    default:
+      return { exit: 1, message: `The CLI failed${status === null ? '' : ` (exit ${status})`}; see its message above.` };
+  }
+}
+
+/** Runs the whole subcommand. `run`, `discover` and the output sinks are injectable. Returns the exit code. */
+export async function runServicePrincipal({
+  flags = {},
+  env = process.env,
+  cwd = process.cwd(),
+  home = homedir(),
+  discover = discoverAuthServer,
+  run = runCli,
+  log = console.error,
+  print = console.log,
+}) {
+  let inputs;
+  try {
+    inputs = await resolveServicePrincipalInputs({ flags, env, cwd, home, discover });
+  } catch (err) {
+    if (!(err instanceof ServicePrincipalError)) throw err;
+    log(err.message);
+    return err.exit;
+  }
+  if (inputs.defaultOut) {
+    try {
+      mkdirSync(dirname(inputs.out), { recursive: true, mode: 0o700 });
+    } catch (err) {
+      log(`Cannot create the credential directory ${dirname(inputs.out)} (${err.code ?? err.message}); nothing was created. Remove whatever is in the way or pass --out.`);
+      return 2;
+    }
+  }
+  if (inputs.warning) log(inputs.warning);
+  log(`Creating service principal "${inputs.name}" in organization ${inputs.orgId} (CLI ${CLI_PACKAGE}@${CLI_VERSION}). A sign-in link follows; the sign-in must be done by an administrator of the organization ${inputs.orgId} (the CLI signs in on its own, so it may be a different account from the plugin's).`);
+  const result = await run(buildCliArgs(inputs), { env });
+  if (result.error) {
+    log(`Could not run npx: ${result.error.message}`);
+    return 1;
+  }
+  if (result.status !== 0) {
+    const failure = mapCliFailure(result, inputs);
+    log(failure.message);
+    return failure.exit;
+  }
+  const created = parseCliJson(result.stdout);
+  const spId = typeof created?.sp_id === 'string' ? created.sp_id : '';
+  if (!spId) {
+    log(`The CLI reported success but printed no sp_id. Find the principal with:\n  ${listCommand(inputs)}`);
+    return 1;
+  }
+  const path = typeof created.path === 'string' && created.path ? created.path : inputs.out;
+  print(
+    [
+      `Service principal created: ${spId}`,
+      `Credential file (holds a private key; never commit or print it): ${path}`,
+      '',
+      'Environment for the agent:',
+      `NOBLECLOAK_SP_CREDENTIALS=${path}`,
+      `NC_EXPECTED_PRINCIPAL=${spId}`,
+      `NC_BASE_URL=${inputs.governAudience}`,
+    ].join('\n')
+  );
+  return 0;
+}

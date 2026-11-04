@@ -1,0 +1,384 @@
+/** scripts/lib/service-principal.mjs and `setup.mjs service-principal`: inputs, guards, the exact CLI invocation, failure mapping. */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  adminAudience,
+  buildCliArgs,
+  CLI_VERSION,
+  insideGitWorkTree,
+  listCommand,
+  mapCliFailure,
+  revokeCommand,
+  parseCliJson,
+  resolveServicePrincipalInputs,
+  runServicePrincipal,
+  slugify,
+} from '../scripts/lib/service-principal.mjs';
+import { makeStateDir, REPO_ROOT } from './helpers.mjs';
+
+const ORG = '11111111-2222-3333-4444-555555555555';
+const AUTH = 'https://auth.noblecloak.com';
+const PRIVATE_D = 'SECRET-PRIVATE-KEY-D-VALUE';
+const mkTmp = (p) => realpathSync(mkdtempSync(join(tmpdir(), p)));
+
+function jwt(claims) {
+  return `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+}
+
+/** An env with a signed-in session for ORG on the production issuer. */
+function session({ claims = { sub: 'u1', org_id: ORG }, extra = {}, issuer = 'https://api.noblecloak.com' } = {}) {
+  const state = makeStateDir();
+  writeFileSync(join(state, 'auth.json'), JSON.stringify({ issuer, accessToken: jwt(claims), refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }));
+  return {
+    NOBLECLOAK_STATE_DIR: state,
+    NOBLECLOAK_ISSUER: issuer,
+    NOBLECLOAK_MCP_FILE: join(state, 'absent.json'),
+    NOBLECLOAK_GOVERN_URL: 'https://govern.noblecloak.com',
+    ...extra,
+  };
+}
+
+const discover = async () => ({ issuer: `${AUTH}/` });
+const inputsOf = (over = {}) => ({ env: session(), cwd: mkTmp('sp-proj-'), home: mkTmp('sp-home-'), discover, ...over });
+
+test('defaults: name is the project directory + " agent", out is ~/.noblecloak/<org>/<slug>.json, values come from the session and deployment', async () => {
+  const base = mkTmp('sp-base-');
+  const cwd = join(base, 'My Cool App');
+  mkdirSync(cwd);
+  const home = mkTmp('sp-home-');
+  const got = await resolveServicePrincipalInputs(inputsOf({ cwd, home }));
+  assert.equal(got.name, 'My Cool App agent');
+  assert.equal(got.out, join(home, '.noblecloak', ORG, 'my-cool-app-agent.json'));
+  assert.deepEqual(
+    [got.orgId, got.authUrl, got.governAudience, got.adminAudience, got.expiresInDays],
+    [ORG, AUTH, 'https://govern.noblecloak.com', 'https://admin-api.noblecloak.com', undefined]
+  );
+  assert.equal(slugify('!!!'), 'agent');
+});
+
+test('flags: --name, --out and --expires-in-days are honoured; bad days refused', async () => {
+  const home = mkTmp('sp-home-');
+  const out = join(mkTmp('sp-out-'), 'cred.json');
+  const got = await resolveServicePrincipalInputs(inputsOf({ home, flags: { name: 'ci', out, 'expires-in-days': '30' } }));
+  assert.deepEqual([got.name, got.out, got.expiresInDays], ['ci', out, 30]);
+  for (const bad of ['0', '366', '1.5', 'x']) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { 'expires-in-days': bad } })), /1 to 365/, bad);
+  }
+});
+
+test('refuses when not signed in (exit 3) or the session has no org id', async () => {
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: { NOBLECLOAK_STATE_DIR: makeStateDir(), NOBLECLOAK_ISSUER: 'https://api.noblecloak.com' } })), (e) => e.exit === 3);
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: { sub: 'u1' } }) })), /no organization id/);
+});
+
+test('refuses a session org id that is not a UUID before it reaches a path', async () => {
+  for (const org of ['../../etc', 'a/b', 'not-a-uuid']) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: { sub: 'u1', org_id: org } }) })), (e) => e.exit === 1 && /not a valid organization id/.test(e.message), org);
+  }
+});
+
+test('session claims: a non-admin organizations entry only warns (the server decides); admin or absent has no warning', async () => {
+  const orgs = (role) => ({ sub: 'u', org_id: ORG, organizations: [{ id: ORG, role }] });
+  const member = await resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('member') }) }));
+  assert.equal(member.orgId, ORG);
+  assert.match(member.warning, /non-administrator of organization/);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('admin') }) }))).warning, undefined);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf())).warning, undefined); // no claim: the deployment decides
+  // end to end: the warning is logged, the CLI still runs, and its 403 (exit 4) is what decides
+  const calls = [];
+  const logs = [];
+  const code = await runServicePrincipal({ env: session({ claims: orgs('member') }), cwd: mkTmp('sp-proj-'), home: mkTmp('sp-home-'), discover, run: async (a) => (calls.push(a), { status: 4, stdout: '', stderr: '' }), log: (m) => logs.push(m), print: () => {} });
+  assert.equal(code, 4);
+  assert.equal(calls.length, 1);
+  const text = logs.join('\n');
+  assert.match(text, /^warning: your session's claims list you as a non-administrator/m);
+  assert.match(text, /must be done by an administrator of the organization 11111111/);
+  assert.doesNotMatch(text, /open it as the organization's administrator/);
+});
+
+test('refuses an --out inside a git work tree, including a not-yet-created subdirectory, but not one outside', async () => {
+  const repo = mkTmp('sp-repo-');
+  mkdirSync(join(repo, '.git'));
+  for (const out of [join(repo, 'cred.json'), join(repo, 'a', 'b', 'cred.json')]) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out } })), /inside a git work tree/, out);
+  }
+  assert.equal(insideGitWorkTree(join(mkTmp('sp-clean-'), 'x.json')), false);
+  // the default path is guarded too (a home directory that is a repository)
+  const home = mkTmp('sp-home-');
+  mkdirSync(join(home, '.git'));
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ home })), /inside a git work tree/);
+});
+
+test('a custom --out needs an existing parent directory (the CLI refuses it too, before sign-in; checked here for the plugin\'s own message); the default directory is created with mode 0700', async () => {
+  const base = mkTmp('sp-out-');
+  const missing = join(base, 'no', 'such', 'cred.json');
+  const notDir = join(base, 'file');
+  writeFileSync(notDir, 'x');
+  for (const out of [missing, join(notDir, 'cred.json')]) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out } })), (e) => e.exit === 2 && /parent directory/.test(e.message), out);
+  }
+  // end to end: refused before the CLI is spawned, so no principal is created
+  const refused = await runWith({ status: 0, stdout: cliJson() }, { out: missing });
+  assert.equal(refused.code, 2);
+  assert.equal(refused.calls.length, 0);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf({ flags: { out: join(base, 'ok.json') } }))).out, join(base, 'ok.json'));
+  // default path: the directory is created, owner-only
+  const home = mkTmp('sp-home-');
+  const code = await runServicePrincipal({ env: session(), cwd: mkTmp('sp-proj-'), home, discover, run: async () => ({ status: 0, stdout: cliJson() }), log: () => {}, print: () => {} });
+  assert.equal(code, 0);
+  assert.equal(statSync(join(home, '.noblecloak', ORG)).mode & 0o777, 0o700);
+});
+
+test('refuses an --out that reaches a git work tree through a symlink', async () => {
+  const repo = mkTmp('sp-repo-');
+  mkdirSync(join(repo, '.git'));
+  mkdirSync(join(repo, 'sub'));
+  const links = mkTmp('sp-links-');
+  const { symlinkSync } = await import('node:fs');
+  symlinkSync(join(repo, 'sub'), join(links, 'L'));
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out: join(links, 'L', 'cred.json') } })), /inside a git work tree/);
+});
+
+test('a default credential directory that cannot be created (a file is in the way) is refused with exit 2, not thrown', async () => {
+  const home = mkTmp('sp-home-');
+  writeFileSync(join(home, '.noblecloak'), 'x');
+  const calls = [];
+  const logs = [];
+  const code = await runServicePrincipal({ env: session(), cwd: mkTmp('sp-proj-'), home, discover, run: async (a) => (calls.push(a), { status: 0, stdout: cliJson() }), log: (m) => logs.push(m), print: () => {} });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(logs.join('\n'), /Cannot create the credential directory .*\.noblecloak.*nothing was created/);
+});
+
+test('refuses an existing --out path (file or dangling symlink)', async () => {
+  const dir = mkTmp('sp-out-');
+  const file = join(dir, 'exists.json');
+  writeFileSync(file, '{}');
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out: file } })), /already exists/);
+  const { symlinkSync } = await import('node:fs');
+  const link = join(dir, 'dangling.json');
+  symlinkSync(join(dir, 'nowhere'), link);
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out: link } })), /already exists/);
+});
+
+test('admin audience: production table, env override wins, unknown deployment refuses naming the variable', async () => {
+  assert.equal(adminAudience(AUTH, {}), 'https://admin-api.noblecloak.com');
+  assert.equal(adminAudience(`${AUTH}/`, {}), 'https://admin-api.noblecloak.com');
+  assert.equal(adminAudience(AUTH, { NOBLECLOAK_ADMIN_AUDIENCE: ' https://admin.example.test ' }), 'https://admin.example.test');
+  assert.equal(adminAudience('https://auth.other.test', { NOBLECLOAK_ADMIN_AUDIENCE: 'https://x.test' }), 'https://x.test');
+  assert.throws(() => adminAudience('https://auth.other.test', {}), /NOBLECLOAK_ADMIN_AUDIENCE/);
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ discover: async () => ({ issuer: 'https://auth.other.test' }) })), /NOBLECLOAK_ADMIN_AUDIENCE/);
+});
+
+test('discovery failure and a missing govern origin refuse clearly', async () => {
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ discover: async () => { throw new Error('boom'); } })), /metadata: boom/);
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ discover: async () => ({}) })), /no issuer/);
+  const env = session({ extra: { NOBLECLOAK_GOVERN_URL: '' } });
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env })), /NOBLECLOAK_GOVERN_URL/);
+});
+
+test('the CLI invocation is built exactly, with the pinned version, every value as --flag=value', () => {
+  const inputs = { orgId: ORG, name: 'my agent', governAudience: 'https://govern.noblecloak.com', out: '/o/c.json', authUrl: AUTH, adminAudience: 'https://admin-api.noblecloak.com' };
+  assert.equal(CLI_VERSION, '0.1.2');
+  assert.deepEqual(buildCliArgs(inputs), [
+    '-y', '@noblecloak/cli@0.1.2', 'sp', 'create', `--org=${ORG}`, '--name=my agent', '--audience=https://govern.noblecloak.com',
+    '--out=/o/c.json', `--auth-url=${AUTH}`, '--admin-audience=https://admin-api.noblecloak.com', '--json',
+  ]);
+  assert.deepEqual(buildCliArgs({ ...inputs, expiresInDays: 7 }).slice(-2), ['--expires-in-days=7', '--json']);
+  // a value starting with '-' stays attached to its flag, so the CLI's parser cannot read it as another flag
+  assert.ok(buildCliArgs({ ...inputs, name: '-scratch agent' }).includes('--name=-scratch agent'));
+});
+
+test('parseCliJson takes the last JSON object and ignores noise', () => {
+  assert.deepEqual(parseCliJson('noise\n{"sp_id":"a"}\n'), { sp_id: 'a' });
+  assert.deepEqual(parseCliJson('{\n  "sp_id": "b"\n}\n'), { sp_id: 'b' });
+  assert.equal(parseCliJson('not json'), null);
+  assert.equal(parseCliJson('[1]'), null);
+});
+
+function cliJson(over = {}) {
+  return JSON.stringify({ client_id: 'sp_x', sp_id: 'sp-uuid-1', org_id: ORG, name: 'n', audiences: [], scopes: [], expires_at: 'z', path: '/cred/path.json', private_jwk: { d: PRIVATE_D }, ...over });
+}
+
+async function runWith(result, flags = {}) {
+  const calls = [];
+  const logs = [];
+  const printed = [];
+  const code = await runServicePrincipal({
+    flags,
+    env: session(),
+    cwd: mkTmp('sp-proj-'),
+    home: mkTmp('sp-home-'),
+    discover,
+    run: async (args, opts) => (calls.push({ args, opts }), result),
+    log: (m) => logs.push(m),
+    print: (m) => printed.push(m),
+  });
+  return { code, calls, logs, printed };
+}
+
+test('success: spawns npx once with the built args, prints sp_id, path and the three env lines, never the key', async () => {
+  const { code, calls, logs, printed } = await runWith({ status: 0, stdout: `${cliJson()}\n`, stderr: '' });
+  assert.equal(code, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args[1], '@noblecloak/cli@0.1.2');
+  assert.ok(calls[0].args.includes('--json'));
+  const text = printed.join('\n');
+  assert.match(text, /^Service principal created: sp-uuid-1$/m);
+  assert.match(text, /^NOBLECLOAK_SP_CREDENTIALS=\/cred\/path\.json$/m);
+  assert.match(text, /^NC_EXPECTED_PRINCIPAL=sp-uuid-1$/m);
+  assert.match(text, /^NC_BASE_URL=https:\/\/govern\.noblecloak\.com$/m);
+  assert.doesNotMatch(text + logs.join('\n'), new RegExp(PRIVATE_D));
+  assert.doesNotMatch(text, /private_jwk/);
+});
+
+test('success without a path in the JSON falls back to the --out it asked for', async () => {
+  const out = join(mkTmp('sp-out-'), 'c.json');
+  const { printed } = await runWith({ status: 0, stdout: cliJson({ path: undefined }) }, { out });
+  assert.match(printed.join('\n'), new RegExp(`NOBLECLOAK_SP_CREDENTIALS=${out.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+});
+
+const ROUTING_404 = 'error: The server answered 404 UNKNOWN: no message\n';
+
+test('the CLI line for a deployment that does not serve the routes says so, and exits non-zero', async () => {
+  const { code, logs, printed } = await runWith({ status: 1, stdout: '', stderr: ROUTING_404 });
+  assert.equal(code, 1);
+  const text = logs.join('\n');
+  assert.match(text, new RegExp(`The deployment answered 404 for the service-principal routes on ${AUTH.replace(/\./g, '\\.')}; the principal was not created`));
+  assert.match(text, /Ask the deployment's operator to serve them on the authorization server's origin/);
+  assert.doesNotMatch(text, /known|being fixed|production routing/i);
+  assert.equal(printed.length, 0);
+});
+
+test('other 404s and "not found" text are not reported as a routing problem', () => {
+  const routing = /answered 404 for the service-principal routes/;
+  const npm = 'npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@noblecloak%2fcli\n';
+  const json = 'error: The server answered 404 NOT_FOUND: organization not found\n';
+  for (const stderr of [npm, json, 'error: the callback path 404 was not found']) {
+    assert.doesNotMatch(mapCliFailure({ status: 1, stderr }).message, routing, stderr);
+  }
+  // the routing line only counts at exit 1
+  assert.doesNotMatch(mapCliFailure({ status: 3, stderr: ROUTING_404 }).message, routing);
+  // exit 4 keeps its own code and message when stderr says "not found"
+  const notFound = 'error: administrator not found\n';
+  assert.equal(mapCliFailure({ status: 4, stderr: notFound }).exit, 4);
+  assert.match(mapCliFailure({ status: 4, stderr: notFound }).message, /not an administrator/);
+  // a post-create network failure whose hint mentions a 404 in a name or path
+  const hint = 'error: could not write /home/u/.noblecloak/404/x.json\n';
+  assert.equal(mapCliFailure({ status: 1, stderr: hint }).exit, 1);
+  assert.doesNotMatch(mapCliFailure({ status: 1, stderr: hint }).message, routing);
+});
+
+test('other CLI failures map by exit code; success with no sp_id is a failure', async () => {
+  // exit 3 from the CLI is split by its stderr line (below); the plugin's own "not signed in" keeps 3
+  assert.equal(mapCliFailure({ status: 4, stderr: '' }).exit, 4);
+  assert.match(mapCliFailure({ status: 4, stderr: '' }).message, /not an administrator/);
+  assert.equal(mapCliFailure({ status: 2, stderr: '' }).exit, 2);
+  assert.equal(mapCliFailure({ status: 1, stderr: 'x' }).exit, 1);
+  const missing = await runWith({ status: 0, stdout: '{"path":"/p"}' });
+  assert.equal(missing.code, 1);
+  assert.equal(missing.printed.length, 0);
+  const spawnFail = await runWith({ status: null, error: new Error('ENOENT') });
+  assert.equal(spawnFail.code, 1);
+  assert.match(spawnFail.logs.join('\n'), /Could not run npx: ENOENT/);
+});
+
+const CTX = { orgId: ORG, authUrl: AUTH, adminAudience: 'https://admin-api.noblecloak.com' };
+const LIST = `npx -y @noblecloak/cli@0.1.2 sp list --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com`;
+
+test('CLI exit 3 is split by its stderr line: sign-in not completed is 5; interrupted and a 401 are not "run it again"', () => {
+  for (const line of ['Sign-in was not completed.', 'Sign-in timed out waiting for the browser.', 'Sign-in was cancelled.', 'Sign-in failed: the token endpoint answered 400.']) {
+    const f = mapCliFailure({ status: 3, stderr: `error: ${line}\n` }, CTX);
+    assert.equal(f.exit, 5, line);
+    assert.match(f.message, /did not complete/);
+  }
+  const maybe = 'error: Interrupted. The server may or may not have applied the request: run noblecloak sp list to check. If a new "n" is listed, it was created and has no credential file (/o was not written): revoke it with\n  noblecloak sp revoke --org x --sp <its id>\n';
+  const interrupted = mapCliFailure({ status: 3, stderr: maybe }, CTX);
+  assert.equal(interrupted.exit, 1);
+  assert.match(interrupted.message, /interrupted; the principal may have been created\. Check with:\n  npx -y @noblecloak\/cli@0\.1\.2 sp list /);
+  assert.ok(interrupted.message.includes(LIST));
+  assert.doesNotMatch(interrupted.message, /again/i);
+  const refused = mapCliFailure({ status: 3, stderr: 'error: Not signed in: the server answered 401 (TOKEN_INVALID).\n' }, CTX);
+  assert.equal(refused.exit, 1);
+  assert.match(refused.message, /refused the administrator's token \(check NOBLECLOAK_ADMIN_AUDIENCE\)/);
+  assert.doesNotMatch(refused.message, /again/i);
+  // an unrecognised exit 3 is neither "sign-in did not complete" nor "run it again"
+  const unknown = mapCliFailure({ status: 3, stderr: 'error: something else\n' }, CTX);
+  assert.equal(unknown.exit, 1);
+  // a sign-in line that is not at the start of an `error:` line is not a CLI sign-in failure
+  assert.equal(mapCliFailure({ status: 3, stderr: 'note: Sign-in was cancelled.\n' }, CTX).exit, 1);
+});
+
+test('recovery commands carry --auth-url, --admin-audience, the npx prefix, and --yes for revoke', () => {
+  assert.equal(listCommand(CTX), LIST);
+  assert.equal(revokeCommand(CTX, 'sp-1'), `npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=sp-1 --yes`);
+  assert.match(revokeCommand(CTX, 'a b; rm -x'), /--sp='a b; rm -x' --yes$/); // every interpolated value is quoted
+  assert.match(listCommand({ ...CTX, authUrl: "https://a.test/it's" }), /--auth-url='https:\/\/a\.test\/it'\\''s'/);
+});
+
+test('a created-but-unsaved principal prints a revoke command that runs as printed', async () => {
+  const stderr = `error: could not write /o/c.json (EACCES). The service principal aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee was created and has no credential file: revoke it with\n  noblecloak sp revoke --org ${ORG} --sp aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n`;
+  const { code, logs } = await runWith({ status: 1, stdout: '', stderr });
+  assert.equal(code, 1);
+  const text = logs.join('\n');
+  assert.ok(text.includes(`npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee --yes`), text);
+  assert.doesNotMatch(text, /^\s*noblecloak sp/m);
+});
+
+test('a forged or malformed created-without-credential line never yields a revoke command with injected text', async () => {
+  const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const forged = [
+    'error: The service principal x; rm -rf ~ was created and has no credential file: revoke it with\n',
+    'error: The service principal `touch /tmp/x` was created and has no credential file: revoke it with\n',
+    'error: The service principal $(id) was created and has no credential file: revoke it with\n',
+    `error: The service principal ${id}; rm -rf ~ was created and has no credential file: revoke it with\n`,
+    // not the CLI's own error line: server text echoed after a prefix on another line
+    `The server said: The service principal ${id} was created and has no credential file: revoke it with\n`,
+  ];
+  for (const stderr of forged) {
+    const { code, logs } = await runWith({ status: 1, stdout: '', stderr });
+    const text = logs.join('\n');
+    assert.equal(code, 1);
+    assert.doesNotMatch(text, /sp revoke/, stderr);
+    assert.doesNotMatch(text, /rm -rf|touch|\$\(id\)/, stderr);
+  }
+  // the ones that still say "was created" fall back to the list command
+  const generic = await runWith({ status: 1, stdout: '', stderr: forged[0] });
+  assert.ok(generic.logs.join('\n').includes(LIST));
+});
+
+test('a create that may or may not have applied prints the full list command; success without an sp_id does too', async () => {
+  const stderr = 'error: The request to https://auth.noblecloak.com timed out before an answer arrived. The server may or may not have applied the request: run noblecloak sp list to check.\n';
+  const a = await runWith({ status: 1, stdout: '', stderr });
+  assert.equal(a.code, 1);
+  assert.ok(a.logs.join('\n').includes(LIST));
+  const b = await runWith({ status: 0, stdout: '{"path":"/p"}' });
+  assert.ok(b.logs.join('\n').includes(LIST));
+});
+
+test('a refused input never spawns the CLI', async () => {
+  const repo = mkTmp('sp-repo-');
+  mkdirSync(join(repo, '.git'));
+  const { code, calls } = await runWith({ status: 0, stdout: cliJson() }, { out: join(repo, 'c.json') });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+});
+
+test('the real entry point: bad flag exits 2, no session exits 3, with no network', async () => {
+  const run = (args, env) =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, [join(REPO_ROOT, 'scripts', 'setup.mjs'), 'service-principal', ...args], { env: { PATH: process.env.PATH, ...env } });
+      let err = '';
+      child.stderr.on('data', (c) => (err += c));
+      child.on('close', (status) => resolve({ status, err }));
+    });
+  assert.equal((await run(['--bogus'], {})).status, 2);
+  const none = await run([], { NOBLECLOAK_STATE_DIR: makeStateDir(), HOME: mkTmp('sp-h-') });
+  assert.equal(none.status, 3);
+  assert.match(none.err, /Not signed in/);
+});

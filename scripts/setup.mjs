@@ -5,6 +5,7 @@
  *
  *   node setup.mjs [detect] [--project <dir>] [--source <dir>|registry] [--accept-version-drift]
  *   node setup.mjs propose <args for the langgraph skill's propose.mjs>
+ *   node setup.mjs service-principal [--name <name>] [--out <path>] [--expires-in-days <n>]
  *
  * `detect` (the default) prints what it found, the candidate skills (bundled under setup-skills/noblecloak-setup-*) and the
  * `--source` to pass to the chosen skill's apply.mjs. It writes nothing into the project. Exit codes: 0 at least one
@@ -30,6 +31,11 @@
  * plugin's token (the deployment rejected it, or it is not a user token), the stored govern token is dropped, as
  * /noblecloak-propose-tool does on a 401, so the next run signs in afresh instead of replaying it.
  *
+ * `service-principal` creates the agent's own service principal with `npx @noblecloak/cli sp create` (pinned in
+ * lib/service-principal.mjs), taking the organization from the signed-in session and the deployment values from the
+ * plugin's configuration (NOBLECLOAK_ADMIN_AUDIENCE overrides the admin audience). Exit codes: 0 created, 2 input
+ * refused, 3 the plugin is not signed in, 4 not an administrator, 5 the CLI's own administrator sign-in did not complete (failed, timed out or cancelled), 1 anything else. Exit 1 includes an interrupted create (the principal may exist; the message prints the full `npx … sp list` command), a 401 from the admin API (check NOBLECLOAK_ADMIN_AUDIENCE) and a principal created without a saved credential (the message prints the full `npx … sp revoke … --yes` command).
+ *
  * Env: NOBLECLOAK_SETUP_SKILLS_DIR names the skills directory (default: this plugin's `setup-skills/`); a test seam.
  */
 import { spawnSync } from 'node:child_process';
@@ -49,6 +55,7 @@ import {
 } from './lib/governance.mjs';
 import { governToken } from './lib/govern-token.mjs';
 import { SignInError } from './lib/pkce-flow.mjs';
+import { runServicePrincipal } from './lib/service-principal.mjs';
 import { BUNDLE_DIR, DIR_PREFIX, LOCK_NAME, SOURCES } from './sync-skills.mjs';
 
 const PLUGIN_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -252,11 +259,21 @@ export async function runPropose({ args, env = process.env, getToken = governTok
 async function main(argv) {
   const [first, ...rest] = argv;
   if (first === 'propose') return runPropose({ args: rest });
+  if (first === 'service-principal') {
+    let flags;
+    try {
+      ({ values: flags } = parseArgs({ args: rest, options: { name: { type: 'string' }, out: { type: 'string' }, 'expires-in-days': { type: 'string' } }, strict: true }));
+    } catch (err) {
+      console.error(`${err.message}\nUsage: setup.mjs service-principal [--name <name>] [--out <path>] [--expires-in-days <n>]`);
+      return 2;
+    }
+    return runServicePrincipal({ flags });
+  }
   let values;
   try {
     ({ values } = parseArgs({ args: first === 'detect' ? rest : argv, options: { project: { type: 'string' }, source: { type: 'string' }, 'accept-version-drift': { type: 'boolean' } }, strict: true }));
   } catch (err) {
-    console.error(`${err.message}\nUsage: setup.mjs [detect] [--project <dir>] [--source <dir>|registry] | setup.mjs propose <propose.mjs args>`);
+    console.error(`${err.message}\nUsage: setup.mjs [detect] [--project <dir>] [--source <dir>|registry] | setup.mjs propose <propose.mjs args> | setup.mjs service-principal [...]`);
     return 1;
   }
   try {

@@ -23,13 +23,23 @@ Set up NobleCloak in the project the user is working in. The setup skills are bu
    - A LangGraph agent: the `langgraph` skill.
    - Both: ask which one to set up first.
 
-3. Read the chosen skill's `SKILL.md` (the path the command printed) and follow it exactly. It says what to ask the user (the API origin, and for langgraph the agent's service principal credential and id), which script to run and what to write. Wherever it says `node <this skill's directory>/scripts/apply.mjs`, use the skill's bundled directory and add `--source <what the command printed>` (`registry`, or the tarball directory). Do not edit the bundled skill files: they are a pinned copy.
+3. For langgraph, before the skill asks for a service principal credential and id: if the user has none, offer to create it (they must administer the organization; the plugin must be signed in). It signs them in as admin with a link, then prints the credential path, the principal id and the three env lines the skill needs:
 
-4. Rules that hold for every skill:
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/setup.mjs service-principal
+   ```
+
+   Run this step with a 10-minute timeout (the Bash tool's `timeout` of 600000 ms): the CLI waits up to 5 minutes for the browser sign-in, and the default 2-minute timeout would cut it off mid-way. The command ignores SIGINT/SIGTERM while the CLI runs so its final message is not lost, so do not retry it before it has returned.
+
+   Optional `--name`, `--out` (outside any git repository) and `--expires-in-days`. Never read or print the credential file. Exit 3: the plugin is not signed in, run `/noblecloak-login`; 5: the administrator sign-in the CLI opened did not complete (failed, timed out or cancelled), re-run and complete the browser sign-in as an administrator; 4: not an administrator; 1: relay the printed cause and show the user any command it prints; run it only after they agree (an interrupted create may have made a principal, and `sp list` shows it; a created-but-unsaved one is retired with the printed `sp revoke` command, which carries `--yes`, so it revokes at once), and do not re-run the create until that is settled.
+
+4. Read the chosen skill's `SKILL.md` (the path the command printed) and follow it exactly. It says what to ask the user (the API origin, and for langgraph the agent's service principal credential and id), which script to run and what to write. Wherever it says `node <this skill's directory>/scripts/apply.mjs`, use the skill's bundled directory and add `--source <what the command printed>` (`registry`, or the tarball directory). Do not edit the bundled skill files: they are a pinned copy.
+
+5. Rules that hold for every skill:
    - Never write `NC_TOKEN`, and never run the agent on a user token.
    - For langgraph, if the user has only a user token and no service principal credential, stop as the skill says.
 
-5. For langgraph, the skill's last step opens the `propose-policy-set` approval with `propose.mjs`. Run it through this command instead of calling `propose.mjs` directly, so the plugin supplies the user's own token (the same govern-audience sign-in `/noblecloak-propose-tool` uses; the first run opens a browser sign-in with a consent screen, which is expected). Check the plan first, then run for real:
+6. For langgraph, the skill's last step opens the `propose-policy-set` approval with `propose.mjs`. Run it through this command instead of calling `propose.mjs` directly, so the plugin supplies the user's own token (the same govern-audience sign-in `/noblecloak-propose-tool` uses; the first run opens a browser sign-in with a consent screen, which is expected). Check the plan first, then run for real:
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/setup.mjs propose --plan <plan.json> --dry-run
@@ -38,6 +48,6 @@ Set up NobleCloak in the project the user is working in. The setup skills are bu
 
    The token is passed to `propose.mjs` in its environment only. Never put it on a command line or in a file, and do not ask the user to paste one. The destination (`NC_BASE_URL` or `--base-url`, the module API origin the user gave you) must be set and must be the same origin the sign-in is for; the command never defaults it, and refuses with exit 1 (before getting a token) when it is missing or differs, so relay that message rather than working around it. `propose.mjs` prints the approval id and the address of the approvals module; relay both. Exit codes are `propose.mjs`'s own (0 opened, 2 plan refused, fix the plan and re-run), plus 3 when the plugin is not signed in (run `/noblecloak-login`) or the deployment did not accept the token (the command has cleared the stored token, so re-running signs in again), and 1 for any other failure (relay the printed cause).
 
-6. When the source was a tarball directory, do not delete it. The skill's `apply.mjs` records the tarball paths in the project's `package.json`, so the project installs from them until it moves to registry versions. With the registry source nothing is recorded but ordinary package versions.
+7. When the source was a tarball directory, do not delete it. The skill's `apply.mjs` records the tarball paths in the project's `package.json`, so the project installs from them until it moves to registry versions. With the registry source nothing is recorded but ordinary package versions.
 
 Tell the user what happens next as the skill says: nothing is registered or published until an administrator approves.
