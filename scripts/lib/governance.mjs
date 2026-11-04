@@ -670,8 +670,8 @@ export function pluginVersion(pluginRoot = PLUGIN_ROOT) {
 //
 // TWO-TOKEN SEAM (documented, not solved here): this plugin's auth.json token
 // drives the governance hooks; Claude Code's native MCP OAuth holds a SEPARATE
-// token for the live gateway session. Both are minted by the same AS
-// default-org path, so they normally bind the same org — but only the gateway
+// token for the live gateway session. Each binds the org picked on
+// its own consent page, so they normally bind the same org — but only the gateway
 // can say authoritatively which org a live MCP session is bound to
 // (a gateway-side introspection ask). Everything here reports the HOOKS token's binding.
 
@@ -696,7 +696,7 @@ export function decodeJwtClaims(token) {
  * The identity bound into an auth state's access token: `{ sub, orgId }` (each
  * possibly undefined), or null when there is no decodable token. The LIVE
  * access token is the source of truth — the refresh path re-mints the token
- * (possibly against a changed default org) and a stale persisted binding would
+ * (possibly against a different org picked on the consent page) and a stale persisted binding would
  * make status report org A while the catalog probe (which sends the live
  * token) reports org B: an internally-contradictory diagnostic in exactly the
  * org-mismatch scenario this feature exists to diagnose. The persisted

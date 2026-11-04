@@ -20,6 +20,7 @@ for (const file of DOCS) {
     assert.doesNotMatch(text, /\/mcp\/connections/);
     assert.doesNotMatch(text, /NOBLECLOAK_API_URL/);
     assert.doesNotMatch(text, /no org picker/i);
+    assert.doesNotMatch(text, /default-org (selection|path)|whichever organization was default|(current|changed) default org|default org changed/i);
   });
 
   test(`${file}: says the org was chosen on the consent page and the MCP connection needs a reconnect`, () => {
@@ -42,6 +43,7 @@ for (const file of SHIPPED_TEXT) {
     assert.doesNotMatch(text, /no org picker/i);
     assert.doesNotMatch(text, /switch (your |the )?default org/i);
     assert.doesNotMatch(text, /change (your |the )?default org/i);
+    assert.doesNotMatch(text, /default-org (selection|path)|whichever organization was default|(current|changed) default org|default org changed/i);
     assert.match(text, /consent page/);
   });
 }

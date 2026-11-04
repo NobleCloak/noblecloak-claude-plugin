@@ -37,7 +37,7 @@ The plugin holds TWO independently minted tokens from the same authorization ser
 1. **Governance-hooks token** (`~/.noblecloak/claude-plugin/auth.json`, or `$NOBLECLOAK_STATE_DIR/auth.json`; written by `/noblecloak-login`) — drives local policy resolution + audit events.
 2. **Claude Code's native MCP OAuth token** — owns the live gateway session (`/mcp`).
 
-Both go through the same consent-page org choice, so they normally bind the same org — but they CAN drift (e.g. default org changed between the two logins): local audits would then run against org A while gateway calls resolve org B's catalog. `/noblecloak-status` can only see the hooks token, so it labels the org accordingly. If the catalog probe succeeds but live MCP calls still fail with "not found in catalog", suspect the seam: reconnect the MCP server from `/mcp` to re-mint its token.
+Both go through the same consent-page org choice, so they normally bind the same org — but they CAN drift (e.g. a different org picked on the two consent pages): local audits would then run against org A while gateway calls resolve org B's catalog. `/noblecloak-status` can only see the hooks token, so it labels the org accordingly. If the catalog probe succeeds but live MCP calls still fail with "not found in catalog", suspect the seam: reconnect the MCP server from `/mcp` to re-mint its token.
 
 ### Available Tool Domains
 - **Core**: Users, organizations, profiles, invitations, settings.

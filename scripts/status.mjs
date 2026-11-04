@@ -13,8 +13,8 @@
  *
  * Two-token seam: this script can only see the plugin's own auth.json token
  * (the governance hooks' custodian). Claude Code's native MCP OAuth holds a
- * SEPARATE token for the live gateway session — same AS default-org path, so
- * the bindings normally agree, but only the gateway can say authoritatively
+ * SEPARATE token for the live gateway session — each token binds the org picked on its own
+ * consent page, so the bindings normally agree, but only the gateway can say authoritatively
  * (a gateway-side introspection ask). The output labels the org as the HOOKS
  * token's binding for exactly this reason.
  *
@@ -152,7 +152,7 @@ if (identity?.orgId) {
     "  All NobleCloak gateway tool calls resolve against this org's catalog. Claude Code's"
   );
   console.log(
-    '  native MCP session holds its own token (same AS default-org path — normally the same org).'
+    '  native MCP session holds its own token (it binds the org picked on its own consent page — normally the same org).'
   );
 } else {
   console.log('Organization (hooks token): UNKNOWN — token carries no org_id claim.');

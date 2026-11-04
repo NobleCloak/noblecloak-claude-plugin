@@ -219,14 +219,15 @@ PostToolUse dispatcher) shows each one as `systemMessage`, **once per Claude Cod
 
 The plugin's `~/.noblecloak/claude-plugin/auth.json` token drives the governance hooks; **Claude Code's native MCP
 OAuth holds a separate token** for the live gateway session (the committed, tokenless
-`.mcp.json` only declares the server). Both tokens are minted by the same AS default-org
-selection, so their org bindings normally agree — but they are minted at different moments and
-CAN drift (default org changed between logins): local-resolve audits would then run against
+`.mcp.json` only declares the server). Each token binds the organization picked on its own consent
+page (the default organization is only preselected there), so their org bindings normally agree
+— but they are minted at different moments and CAN drift (a different org picked on the two
+consent pages): local-resolve audits would then run against
 org A while gateway `tools/call`s resolve org B's catalog. There is no client-side way to read
 the native token; `/noblecloak-status` therefore labels its org line "hooks token" and the
 authoritative session-org echo is a gateway-side ask. When the bindings are suspected
 to differ, re-run `/noblecloak-login` AND reconnect the MCP server from `/mcp` so both re-mint
-against the current default org.
+against the organization you pick on each consent page.
 
 The organization shown after sign-in was chosen on the consent page. To use a different one,
 re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
@@ -265,7 +266,7 @@ When the breaker opens, the next tool call tells the user once per session.
 
 COO files a Claude Code session's local audit under an audit run whose id **is the session
 id**, created in the org of the first token that posted to it. If you then sign in to a
-different org (for example `/noblecloak-login` after your default org changed), COO refuses
+different org (for example `/noblecloak-login` after you picked a different org on the consent page), COO refuses
 every later event for that run with 403 `tenant_run_mismatch`. That is permanent for the run,
 and a **resumed** Claude Code session keeps its session id, so it never recovers on its own.
 

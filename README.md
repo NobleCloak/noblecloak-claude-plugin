@@ -116,8 +116,9 @@ anything auth-shaped:
 - **Claude Code's native MCP OAuth token** — separate, owned by Claude Code,
   **unreadable from here**.
 
-Both bind whichever organization was default *when they were issued*, and
-they are issued at different moments, so they can disagree. This is why
+Each binds the organization picked on its own consent page *when it was issued*
+(the default organization is only preselected there), and they are issued at
+different moments, so they can disagree. This is why
 `/noblecloak-status` labels its org line "hooks token" and why fixing a
 wrong-org problem needs `/noblecloak-login` **and** an `/mcp` reconnect.
 
