@@ -317,16 +317,39 @@ test('CLI exit 3 is split by its stderr line: sign-in not completed is 5; interr
 test('recovery commands carry --auth-url, --admin-audience, the npx prefix, and --yes for revoke', () => {
   assert.equal(listCommand(CTX), LIST);
   assert.equal(revokeCommand(CTX, 'sp-1'), `npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=sp-1 --yes`);
+  assert.match(revokeCommand(CTX, 'a b; rm -x'), /--sp='a b; rm -x' --yes$/); // every interpolated value is quoted
   assert.match(listCommand({ ...CTX, authUrl: "https://a.test/it's" }), /--auth-url='https:\/\/a\.test\/it'\\''s'/);
 });
 
 test('a created-but-unsaved principal prints a revoke command that runs as printed', async () => {
-  const stderr = `error: could not write /o/c.json (EACCES). The service principal sp-orphan-7 was created and has no credential file: revoke it with\n  noblecloak sp revoke --org ${ORG} --sp sp-orphan-7\n`;
+  const stderr = `error: could not write /o/c.json (EACCES). The service principal aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee was created and has no credential file: revoke it with\n  noblecloak sp revoke --org ${ORG} --sp aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n`;
   const { code, logs } = await runWith({ status: 1, stdout: '', stderr });
   assert.equal(code, 1);
   const text = logs.join('\n');
-  assert.ok(text.includes(`npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=sp-orphan-7 --yes`), text);
+  assert.ok(text.includes(`npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee --yes`), text);
   assert.doesNotMatch(text, /^\s*noblecloak sp/m);
+});
+
+test('a forged or malformed created-without-credential line never yields a revoke command with injected text', async () => {
+  const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const forged = [
+    'error: The service principal x; rm -rf ~ was created and has no credential file: revoke it with\n',
+    'error: The service principal `touch /tmp/x` was created and has no credential file: revoke it with\n',
+    'error: The service principal $(id) was created and has no credential file: revoke it with\n',
+    `error: The service principal ${id}; rm -rf ~ was created and has no credential file: revoke it with\n`,
+    // not the CLI's own error line: server text echoed after a prefix on another line
+    `The server said: The service principal ${id} was created and has no credential file: revoke it with\n`,
+  ];
+  for (const stderr of forged) {
+    const { code, logs } = await runWith({ status: 1, stdout: '', stderr });
+    const text = logs.join('\n');
+    assert.equal(code, 1);
+    assert.doesNotMatch(text, /sp revoke/, stderr);
+    assert.doesNotMatch(text, /rm -rf|touch|\$\(id\)/, stderr);
+  }
+  // the ones that still say "was created" fall back to the list command
+  const generic = await runWith({ status: 1, stdout: '', stderr: forged[0] });
+  assert.ok(generic.logs.join('\n').includes(LIST));
 });
 
 test('a create that may or may not have applied prints the full list command; success without an sp_id does too', async () => {

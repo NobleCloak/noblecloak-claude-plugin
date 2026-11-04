@@ -254,9 +254,14 @@ export function mapCliFailure({ status, stderr = '' }, ctx = {}) {
   }
   if (status === 1) {
     // Created on the server, credential not saved (commands.ts orphaned()).
-    const orphan = /The service principal (\S+) was created and has no credential file/.exec(stderr);
+    // Anchored to the CLI's own line and the id to the UUID format `sp revoke --sp` requires, so text echoed from a server
+    // error cannot put anything but a UUID into the printed command.
+    const orphan = /^error: .*The service principal ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) was created and has no credential file: revoke it with$/im.exec(stderr);
     if (orphan) {
-      return { exit: 1, message: `The principal ${orphan[1]} was created but its credential file was not saved. Revoke it with:\n  ${revokeCommand(ctx, orphan[1])}` };
+      return { exit: 1, message: `The principal ${orphan[1]} was created but its credential file was not saved. To retire it, review and then run:\n  ${revokeCommand(ctx, orphan[1])}` };
+    }
+    if (/was created and has no credential file/.test(stderr)) {
+      return { exit: 1, message: `A principal was created but its credential file was not saved, and its id could not be read from the CLI's message. Find it with:\n  ${listCommand(ctx)}` };
     }
     // A create that failed after the request left (api.ts MAYBE_APPLIED).
     if (/The server may or may not have applied the request/.test(stderr)) {
