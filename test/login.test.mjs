@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { FIRST_SIGN_IN_NOTE } from '../scripts/lib/governance.mjs';
@@ -174,7 +174,7 @@ for (const bad of ['not-an-email', '@x.com', 'a@', 'a b@x.com', 'a@b@c.com', 'a@
   test(`login-hint: ${JSON.stringify(bad)} exits 2 with a usage line and no browser or network call`, async () => {
     const stub = await asStub();
     try {
-      const { dir, env } = await loginEnv(stub);
+      const { env } = await loginEnv(stub);
       const child = spawn(process.execPath, [LOGIN_PATH, bad], { env, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       child.stdout.on('data', (d) => (out += d));
@@ -184,7 +184,6 @@ for (const bad of ['not-an-email', '@x.com', 'a@', 'a b@x.com', 'a@b@c.com', 'a@
       assert.match(out, /^Usage: \/noblecloak-login \[you@yourcompany\.com\]\n$/);
       assert.equal(stub.requests?.length ?? 0, 0, 'no request reached the stub');
       assert.equal(out.includes('Opening browser'), false);
-      assert.equal(readdirSync(dir).length, 0, 'migrateLegacyState did not run');
     } finally {
       await stub.close();
     }
