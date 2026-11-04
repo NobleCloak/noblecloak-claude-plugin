@@ -236,7 +236,7 @@ export function mapCliFailure({ status, stderr = '' }, authUrl = '') {
     case 2:
       return { exit: 2, message: 'The CLI refused the input (see its message above). Nothing was created.' };
     case 3:
-      return { exit: 3, message: 'Sign-in for the administrator did not complete (failed, timed out or cancelled). Run it again.' };
+      return { exit: 5, message: 'Sign-in for the administrator did not complete (failed, timed out or cancelled). Run it again.' };
     case 4:
       return { exit: 4, message: 'You are not an administrator of that organization. Ask an administrator to run this.' };
     default:

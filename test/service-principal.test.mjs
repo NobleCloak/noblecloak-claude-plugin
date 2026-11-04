@@ -221,9 +221,9 @@ test('other 404s and "not found" text are not reported as a routing problem', ()
   }
   // the routing line only counts at exit 1
   assert.doesNotMatch(mapCliFailure({ status: 3, stderr: ROUTING_404 }).message, routing);
-  // exit 3 / 4 keep their own code and message when stderr says "not found"
+  // exit 3 (CLI sign-in, reported as 5) / 4 keep their own code and message when stderr says "not found"
   const notFound = 'error: administrator not found\n';
-  assert.equal(mapCliFailure({ status: 3, stderr: notFound }).exit, 3);
+  assert.equal(mapCliFailure({ status: 3, stderr: notFound }).exit, 5);
   assert.equal(mapCliFailure({ status: 4, stderr: notFound }).exit, 4);
   assert.match(mapCliFailure({ status: 4, stderr: notFound }).message, /not an administrator/);
   // a post-create network failure whose hint mentions a 404 in a name or path
@@ -233,7 +233,9 @@ test('other 404s and "not found" text are not reported as a routing problem', ()
 });
 
 test('other CLI failures map by exit code; success with no sp_id is a failure', async () => {
-  assert.equal(mapCliFailure({ status: 3, stderr: '' }).exit, 3);
+  // exit 3 from the CLI is its own administrator sign-in failing; the plugin's own "not signed in" keeps 3
+  assert.equal(mapCliFailure({ status: 3, stderr: '' }).exit, 5);
+  assert.match(mapCliFailure({ status: 3, stderr: '' }).message, /administrator/);
   assert.equal(mapCliFailure({ status: 4, stderr: '' }).exit, 4);
   assert.match(mapCliFailure({ status: 4, stderr: '' }).message, /not an administrator/);
   assert.equal(mapCliFailure({ status: 2, stderr: '' }).exit, 2);
