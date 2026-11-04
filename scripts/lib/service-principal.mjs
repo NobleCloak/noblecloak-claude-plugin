@@ -66,9 +66,9 @@ export function insideGitWorkTree(path) {
 }
 
 /**
- * The org-admin check the session's claims allow. The access token's `organizations` claim ([{ id, role }], the shape the
- * core API reads) is advisory: when it lists the org with a role other than admin, refuse; when it is absent or does not
- * list the org there is nothing to contradict and the deployment decides (the CLI exits 4 when it refuses).
+ * What the session's claims say about the user's role in the org. The access token's `organizations` claim ([{ id, role }])
+ * is unverified here and is not what the server decides on (it checks the path organization's membership in its own
+ * database), so a non-admin verdict is only a warning: the CLI's 403 (exit 4) decides.
  */
 export function adminClaimVerdict(auth, orgId) {
   const claims = decodeClaims(auth?.accessToken);
@@ -103,9 +103,10 @@ export async function resolveServicePrincipalInputs({
   if (!UUID.test(orgId)) {
     throw new ServicePrincipalError('The signed-in session carries an organization id that is not a valid organization id (a UUID). Run /noblecloak-login again.', 1);
   }
-  if (adminClaimVerdict(auth, orgId) === 'not-admin') {
-    throw new ServicePrincipalError(`Your session says you are not an administrator of organization ${orgId}. Only an administrator can create a service principal; ask one to run this.`, 4);
-  }
+  const warning =
+    adminClaimVerdict(auth, orgId) === 'not-admin'
+      ? `warning: your session's claims list you as a non-administrator of organization ${orgId}. The server decides, so continuing; the CLI's administrator sign-in must be an administrator of that organization.`
+      : undefined;
 
   const name = trim(flags.name) || `${basename(resolve(cwd))} agent`;
   if (name.length > 255) throw new ServicePrincipalError('--name must be 1 to 255 characters.', 2);
@@ -141,7 +142,7 @@ export async function resolveServicePrincipalInputs({
   }
   if (!authUrl) throw new ServicePrincipalError("The authorization server's metadata has no issuer.", 1);
 
-  return { orgId, name, expiresInDays, out, authUrl, governAudience, adminAudience: adminAudience(authUrl, env), defaultOut: !flags.out };
+  return { orgId, name, expiresInDays, out, authUrl, governAudience, adminAudience: adminAudience(authUrl, env), defaultOut: !flags.out, warning };
 }
 
 function isDirectory(path) {
@@ -270,7 +271,8 @@ export async function runServicePrincipal({
       return 2;
     }
   }
-  log(`Creating service principal "${inputs.name}" in organization ${inputs.orgId} (CLI ${CLI_PACKAGE}@${CLI_VERSION}). A sign-in link follows; open it as the organization's administrator.`);
+  if (inputs.warning) log(inputs.warning);
+  log(`Creating service principal "${inputs.name}" in organization ${inputs.orgId} (CLI ${CLI_PACKAGE}@${CLI_VERSION}). A sign-in link follows; the sign-in must be done by an administrator of the organization ${inputs.orgId} (the CLI signs in on its own, so it may be a different account from the plugin's).`);
   const result = await run(buildCliArgs(inputs), { env });
   if (result.error) {
     log(`Could not run npx: ${result.error.message}`);

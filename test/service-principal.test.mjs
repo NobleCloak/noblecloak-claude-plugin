@@ -80,11 +80,23 @@ test('refuses a session org id that is not a UUID before it reaches a path', asy
   }
 });
 
-test('session claims: an organizations entry with a non-admin role refuses (exit 4); admin or absent proceeds', async () => {
+test('session claims: a non-admin organizations entry only warns (the server decides); admin or absent has no warning', async () => {
   const orgs = (role) => ({ sub: 'u', org_id: ORG, organizations: [{ id: ORG, role }] });
-  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('member') }) })), (e) => e.exit === 4 && /not an administrator/.test(e.message));
-  assert.equal((await resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('admin') }) }))).orgId, ORG);
-  assert.equal((await resolveServicePrincipalInputs(inputsOf())).orgId, ORG); // no claim: the deployment decides
+  const member = await resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('member') }) }));
+  assert.equal(member.orgId, ORG);
+  assert.match(member.warning, /non-administrator of organization/);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('admin') }) }))).warning, undefined);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf())).warning, undefined); // no claim: the deployment decides
+  // end to end: the warning is logged, the CLI still runs, and its 403 (exit 4) is what decides
+  const calls = [];
+  const logs = [];
+  const code = await runServicePrincipal({ env: session({ claims: orgs('member') }), cwd: mkTmp('sp-proj-'), home: mkTmp('sp-home-'), discover, run: async (a) => (calls.push(a), { status: 4, stdout: '', stderr: '' }), log: (m) => logs.push(m), print: () => {} });
+  assert.equal(code, 4);
+  assert.equal(calls.length, 1);
+  const text = logs.join('\n');
+  assert.match(text, /^warning: your session's claims list you as a non-administrator/m);
+  assert.match(text, /must be done by an administrator of the organization 11111111/);
+  assert.doesNotMatch(text, /open it as the organization's administrator/);
 });
 
 test('refuses an --out inside a git work tree, including a not-yet-created subdirectory, but not one outside', async () => {
