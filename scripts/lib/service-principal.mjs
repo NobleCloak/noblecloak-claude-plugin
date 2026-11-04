@@ -185,10 +185,21 @@ export function buildCliArgs(inputs) {
 /**
  * Runs npx with stdin and stdout of the CLI under our control: stderr (the sign-in URL and the diagnostics) is shown live
  * and also kept, so a failure can be mapped. Resolves { status, stdout, stderr, error }.
+ *
+ * While the child runs, SIGINT and SIGTERM are ignored here and reading continues until the child closes: a terminal Ctrl-C
+ * reaches the child too (same process group) and the CLI answers it with its own message ("the server may or may not have
+ * applied the request ...") or its success JSON; dying first would lose that text in an unread pipe. A signal sent only to
+ * this process (a tool timeout's SIGTERM) therefore does not stop the CLI either; the child's own sign-in timeout bounds the wait.
  */
 export function runCli(args, { env = process.env, stderrSink = process.stderr } = {}) {
   return new Promise((resolvePromise) => {
     const child = spawn('npx', args, { env, stdio: ['inherit', 'pipe', 'pipe'] });
+    const ignore = () => {};
+    const signals = ['SIGINT', 'SIGTERM'];
+    for (const sig of signals) process.on(sig, ignore);
+    const release = () => {
+      for (const sig of signals) process.off(sig, ignore);
+    };
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (c) => (stdout += c));
@@ -196,8 +207,14 @@ export function runCli(args, { env = process.env, stderrSink = process.stderr } 
       stderr += c;
       stderrSink.write(c);
     });
-    child.on('error', (error) => resolvePromise({ status: null, stdout, stderr, error }));
-    child.on('close', (status) => resolvePromise({ status, stdout, stderr }));
+    child.on('error', (error) => {
+      release();
+      resolvePromise({ status: null, stdout, stderr, error });
+    });
+    child.on('close', (status) => {
+      release();
+      resolvePromise({ status, stdout, stderr });
+    });
   });
 }
 

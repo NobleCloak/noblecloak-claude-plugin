@@ -126,3 +126,50 @@ test('e2e: CLI exit codes map through the real spawn (3 cancelled sign-in -> 5, 
   assert.equal((await start('forbidden').done).code, 4);
   assert.equal((await start('other').done).code, 1);
 });
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  test(`e2e: ${sig} to the plugin while the CLI runs does not lose the CLI's success result`, async () => {
+    let sent = false;
+    const { done } = start('signal', {
+      onStderr: (chunk, child) => {
+        if (!sent && chunk.includes('child-ready')) {
+          sent = true;
+          child.kill(sig);
+        }
+      },
+    });
+    const r = await done;
+    assert.equal(sent, true);
+    assert.equal(r.signal, null, `the plugin was killed by ${r.signal}`);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /^Service principal created: sp-e2e-1$/m);
+  });
+}
+
+test('e2e: SIGINT during an interrupted create still shows the CLI "may or may not have applied" text and the recovery command', async () => {
+  let sent = false;
+  const { done } = start('signal-fail', {
+    onStderr: (chunk, child) => {
+      if (!sent && chunk.includes('child-ready')) {
+        sent = true;
+        child.kill('SIGINT');
+      }
+    },
+  });
+  const r = await done;
+  assert.equal(r.signal, null);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /may or may not have applied the request/);
+  assert.match(r.stderr, /npx -y @noblecloak\/cli@0\.1\.2 sp list --org=11111111-2222-3333-4444-555555555555 --auth-url=https:\/\/auth\.noblecloak\.com --admin-audience=https:\/\/admin-api\.noblecloak\.com/);
+});
+
+test('runCli removes its signal handlers when the child closes, and when npx cannot be spawned', async () => {
+  const { runCli } = await import('../scripts/lib/service-principal.mjs');
+  const before = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
+  const env = { PATH: `${binDir}${delimiter}${process.env.PATH}`, FAKE_NPX_MODE: 'other', FAKE_NPX_ARGV: join(mkTmp('sp-lc-'), 'a.json') };
+  const sink = { write() {} };
+  assert.equal((await runCli(['x'], { env, stderrSink: sink })).status, 9);
+  const missing = await runCli(['x'], { env: { PATH: mkTmp('sp-empty-') }, stderrSink: sink });
+  assert.ok(missing.error);
+  assert.deepEqual([process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')], before);
+});
