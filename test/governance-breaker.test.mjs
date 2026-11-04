@@ -341,6 +341,7 @@ test('classifyEmitFailure: 401 auth; permanent ONLY for recognised codes; everyt
   assert.equal(classifyEmitFailure(403, 'tenant_run_mismatch'), 'permanent');
   assert.equal(classifyEmitFailure(400, 'validation_error'), 'permanent');
   assert.equal(classifyEmitFailure(422, 'validation_error'), 'permanent');
+  assert.equal(classifyEmitFailure(413, 'payload_too_large'), 'permanent');
   for (const s of [408, 429, 500, 502, 503, 504]) assert.equal(classifyEmitFailure(s), 'transient', String(s));
   for (const s of [400, 403, 404, 409, 410, 413, 422]) {
     assert.equal(classifyEmitFailure(s), 'transient', `${s} with no code`);
@@ -349,6 +350,7 @@ test('classifyEmitFailure: 401 auth; permanent ONLY for recognised codes; everyt
   // A recognised code on the wrong status is not permanent either.
   assert.equal(classifyEmitFailure(404, 'tenant_run_mismatch'), 'transient');
   assert.equal(classifyEmitFailure(403, 'validation_error'), 'transient');
+  assert.equal(classifyEmitFailure(400, 'payload_too_large'), 'transient');
   assert.equal(classifyEmitFailure(409, 'validation_error'), 'transient');
 });
 
@@ -492,11 +494,29 @@ test('400/422 validation_error is permanent: dead-lettered, no spill, no breaker
   }
 });
 
+test('413 payload_too_large is permanent: dead-lettered, no spill, no breaker, no run rejection', async (t) => {
+  const stub = await startStub();
+  t.after(() => stub.close());
+  stub.eventStatus = 413;
+  stub.eventErrorBody = { error: { code: 'payload_too_large', message: 'too big', details: {} }, meta: {} };
+  const dir = makeStateDir();
+  const e = env(dir, { NOBLECLOAK_COO_URL: stub.url, NOBLECLOAK_DEV_TOKEN: 'tok' });
+  for (let i = 0; i < AUDIT_BREAKER_THRESHOLD + 2; i += 1) {
+    assert.equal(await emitAuditEvent({ id: `big${i}:pre`, subject: 's' }, e), EMIT_REJECTED);
+  }
+  assert.equal(readBreaker(e).phase, 'closed', 'oversize rejections never open the breaker');
+  assert.deepEqual(readSpillRecords(dir), []);
+  assert.equal(deadLetters(dir).length, AUDIT_BREAKER_THRESHOLD + 2);
+  assert.equal(deadLetters(dir)[0].code, 'payload_too_large');
+  assert.equal(isRunRejected('s', undefined, e), false);
+});
+
 test('a 4xx WITHOUT a recognised code is retryable: spilled, counts toward the breaker, never dead-lettered', async (t) => {
   const cases = [
     { status: 404, body: { error: { code: 'not_found', message: 'x' }, meta: {} } },
     { status: 409, body: { error: { code: 'conflict', message: 'x' }, meta: {} } },
     { status: 413, body: null },
+    { status: 413, body: { error: { code: 'something_else', message: 'x' }, meta: {} } }, // a proxy 413, not COO's
     { status: 403, body: null }, // gateway/WAF 403 with no COO envelope
     { status: 403, body: { error: { code: 'forbidden', message: 'x' }, meta: {} } },
     { status: 400, body: { error: { code: 'bad_request', message: 'x' }, meta: {} } },
@@ -623,14 +643,14 @@ test('401 while the refresh fails transiently: the backoff holds the grant count
   assert.equal(stub.requests.filter((r) => r.path === '/auth/oauth/token').length, 1);
 });
 
-// ── adv-4: what COO's local-events route actually sends for a bad payload ───
-// The COO API's local-events route throws a bad-request error (400 `bad_request`)
-// for data_invalid / cloudevents_envelope_invalid / unknown_ce_type /
-// unknown_ce_source / body_too_large; nothing on that route emits
-// `validation_error`. Until it does, such a refusal is retried, not
-// dead-lettered — pinned here so the docs cannot drift from it again.
+// ── adv-4: what COO's local-events route sends ──────────────────────────────
+// A rejected payload (data_invalid / cloudevents_envelope_invalid /
+// unknown_ce_type / unknown_ce_source / non-JSON) is 400 `validation_error`
+// (permanent); an oversize body is 413 `payload_too_large` (permanent). A
+// server fault stays 400 `bad_request`, which is retried — pinned here so the
+// docs cannot drift from it.
 
-test('400 bad_request (COO local-events payload rejection) is spilled for retry and counts toward the breaker', async (t) => {
+test('400 bad_request (COO local-events server fault) is spilled for retry and counts toward the breaker', async (t) => {
   const stub = await startStub();
   t.after(() => stub.close());
   stub.eventStatus = 400;
@@ -644,9 +664,11 @@ test('400 bad_request (COO local-events payload rejection) is spilled for retry 
   assert.equal(classifyEmitFailure(400, 'bad_request'), 'transient');
 });
 
-test('docs do not claim COO local-events emits validation_error today', () => {
+test('docs list 413 payload_too_large as permanent and 400 bad_request as retried', () => {
   for (const f of ['docs/governance-hook.md', 'commands/noblecloak-status.md']) {
     const src = readFileSync(join(REPO_ROOT, f), 'utf-8');
-    assert.match(src, /does not (?:send|emit) `validation_error`/, f);
+    assert.match(src, /413[^\n]*`payload_too_large`/, f);
+    assert.match(src, /`bad_request`/, f);
+    assert.doesNotMatch(src, /does not (?:send|emit) `validation_error`/, f);
   }
 });

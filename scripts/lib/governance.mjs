@@ -2154,9 +2154,9 @@ export function failModeDecision(sideEffectLevel, enforce) {
 //     retryable non-2xx (401, 5xx, and every 4xx without a recognised
 //     permanent code) emitAuditEvent spills synchronously and returns
 //     EMIT_SPILLED; a recognised permanent refusal (403 tenant_run_mismatch;
-//     400/422 validation_error, which COO's local-events route does not send
-//     today) returns EMIT_REJECTED and is dead-lettered
-//     instead (see classifyEmitFailure). The spill
+//     400/422 validation_error, which COO's local-events route sends for a
+//     rejected payload; 413 payload_too_large) returns EMIT_REJECTED and is
+//     dead-lettered instead (see classifyEmitFailure). The spill
 //     exists so a failed/timed-out POST is never silently dropped (not because
 //     the process exits mid-POST — nothing kills the unparented worker, so the
 //     abort always fires and the catch→spill always runs). A spilled `:pre`
@@ -2435,19 +2435,18 @@ export const EMIT_REJECTED = 'rejected';
  * COO error codes that make a refusal permanent, by HTTP status. Only these are
  * dead-lettered; every other 4xx is retried. Codes are the COO API's
  * `{ error: { code } }` envelope: 403 `tenant_run_mismatch` (BN004 from the
- * coo_run_events trigger) and `validation_error` (its ValidationError, 422;
- * accepted on 400 too).
+ * coo_run_events trigger), `validation_error` (its ValidationError, 422;
+ * COO's local-events route sends it on 400 for a rejected payload) and
+ * `payload_too_large` (413: the body cap is route-local, so an envelope over
+ * it never fits on a retry).
  *
- * The COO API's POST /v1/coo/local/events does NOT send `validation_error`:
- * it rejects a bad payload (data_invalid, cloudevents_envelope_invalid,
- * unknown_ce_type, unknown_ce_source, body_too_large, non-JSON) as 400
- * `bad_request`, a code it shares with server faults, and an oversize body
- * as 413. Those are retried. The `validation_error` entries take effect only
- * once COO sends that code for payload rejections (requested cross-repo).
+ * The same route keeps 400 `bad_request` for a server fault, which stays
+ * transient.
  */
 const PERMANENT_ERROR_CODES = {
   400: new Set(['validation_error']),
   403: new Set(['tenant_run_mismatch']),
+  413: new Set(['payload_too_large']),
   422: new Set(['validation_error']),
 };
 
@@ -2455,11 +2454,11 @@ const PERMANENT_ERROR_CODES = {
  * Classify a non-2xx ingest response from its status and the COO error `code`:
  *   'auth'      — 401 (the token was refused; refresh at most once per token, and
  *                 count toward the breaker)
- *   'permanent' — 403 `tenant_run_mismatch`, or 400/422 `validation_error`
- *                 (not sent by COO's local-events route today; see above):
+ *   'permanent' — 403 `tenant_run_mismatch`, 400/422 `validation_error`, or
+ *                 413 `payload_too_large` (see above):
  *                 re-sending the same envelope can never succeed.
  *   'transient' — everything else: 5xx, 408, 429, and every other 4xx (404,
- *                 409, 413, a 403 with no or another code, …) → spill + breaker.
+ *                 409, a 413 with no or another code, a 403 with no or another code, …) → spill + breaker.
  *                 An unrecognised refusal is never treated as permanent, so an
  *                 audit event is never dropped on a status alone.
  */

@@ -242,18 +242,18 @@ handled:
 |---|---|---|
 | 2xx | delivered | the `:pre` is ledgered as shipped |
 | 401 | auth | spilled (a `:pre` stays eligible for the next drain) and counts toward the circuit breaker; the token is refreshed, at most once per token: if the token that refresh minted also draws a 401, COO is refusing fresh tokens, and the breaker, not more refreshes, stops the calls. A rejected grant signs the plugin out |
-| 403 with code `tenant_run_mismatch`; 400 or 422 with code `validation_error` | **permanent** | not spilled for retry, not counted toward the breaker; written to the dead-letter tail `~/.noblecloak/claude-plugin/audit-dead.jsonl` (last 256; older lines trimmed from it are counted and shown by `/noblecloak-status`); the `:pre` is marked dead so no drain re-sends it |
-| every other 4xx (404, 409, 413, a 403 with no or another code, …), 5xx, 408, 429, timeout, network | transient | spilled, counts toward the circuit breaker (5 in a row opens it for 30s) |
+| 403 with code `tenant_run_mismatch`; 400 or 422 with code `validation_error`; 413 with code `payload_too_large` | **permanent** | not spilled for retry, not counted toward the breaker; written to the dead-letter tail `~/.noblecloak/claude-plugin/audit-dead.jsonl` (last 256; older lines trimmed from it are counted and shown by `/noblecloak-status`); the `:pre` is marked dead so no drain re-sends it |
+| every other 4xx (404, 409, a 413 with no or another code, a 403 with no or another code, …), 5xx, 408, 429, timeout, network | transient | spilled, counts toward the circuit breaker (5 in a row opens it for 30s) |
 
 Only a refusal carrying one of those COO error codes (`{ error: { code } }`) is permanent. A
 status alone never is, so a proxy 404 or a gateway 403 during a deploy keeps the events for retry
 instead of dropping them.
 
-COO's local-events route does not send `validation_error` today.
-It rejects a malformed or unrecognised envelope (`data_invalid`, `cloudevents_envelope_invalid`,
-`unknown_ce_type`, `unknown_ce_source`, `body_too_large`, non-JSON) as 400 `bad_request`, a code
-it also uses for server faults, and an oversize body as 413. Those are therefore retried and
-count toward the breaker; in practice only 403 `tenant_run_mismatch` is dead-lettered. The
+COO's local-events route sends 400 `validation_error` for a rejected payload (`data_invalid`,
+`cloudevents_envelope_invalid`, `unknown_ce_type`, `unknown_ce_source`, non-JSON), so those are
+dead-lettered. It answers an oversize body as 413 `payload_too_large`, also dead-lettered: an
+envelope over the cap never fits on a retry. It keeps 400 `bad_request` for a server fault, which is
+retried and counts toward the breaker. The
 `validation_error` rows take effect once COO sends that code for payload rejections.
 
 When the breaker opens, the next tool call tells the user once per session.
