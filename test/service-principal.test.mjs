@@ -147,14 +147,16 @@ test('discovery failure and a missing govern origin refuse clearly', async () =>
   await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env })), /NOBLECLOAK_GOVERN_URL/);
 });
 
-test('the CLI invocation is built exactly, with the pinned version', () => {
+test('the CLI invocation is built exactly, with the pinned version, every value as --flag=value', () => {
   const inputs = { orgId: ORG, name: 'my agent', governAudience: 'https://govern.noblecloak.com', out: '/o/c.json', authUrl: AUTH, adminAudience: 'https://admin-api.noblecloak.com' };
   assert.equal(CLI_VERSION, '0.1.2');
   assert.deepEqual(buildCliArgs(inputs), [
-    '-y', '@noblecloak/cli@0.1.2', 'sp', 'create', '--org', ORG, '--name', 'my agent', '--audience', 'https://govern.noblecloak.com',
-    '--out', '/o/c.json', '--auth-url', AUTH, '--admin-audience', 'https://admin-api.noblecloak.com', '--json',
+    '-y', '@noblecloak/cli@0.1.2', 'sp', 'create', `--org=${ORG}`, '--name=my agent', '--audience=https://govern.noblecloak.com',
+    '--out=/o/c.json', `--auth-url=${AUTH}`, '--admin-audience=https://admin-api.noblecloak.com', '--json',
   ]);
-  assert.deepEqual(buildCliArgs({ ...inputs, expiresInDays: 7 }).slice(-3), ['--expires-in-days', '7', '--json']);
+  assert.deepEqual(buildCliArgs({ ...inputs, expiresInDays: 7 }).slice(-2), ['--expires-in-days=7', '--json']);
+  // a value starting with '-' stays attached to its flag, so the CLI's parser cannot read it as another flag
+  assert.ok(buildCliArgs({ ...inputs, name: '-scratch agent' }).includes('--name=-scratch agent'));
 });
 
 test('parseCliJson takes the last JSON object and ignores noise', () => {

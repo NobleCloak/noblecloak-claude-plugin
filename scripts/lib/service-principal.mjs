@@ -164,24 +164,19 @@ function existsSyncAny(path) {
 
 /** The exact argv for `npx`. The deployment values go as flags, so no ambient NOBLECLOAK_* variable can change what the CLI targets. */
 export function buildCliArgs(inputs) {
+  // `--flag=value` form: a value that starts with '-' (a name like "-scratch agent") is then not read as another flag.
   return [
     '-y',
     `${CLI_PACKAGE}@${CLI_VERSION}`,
     'sp',
     'create',
-    '--org',
-    inputs.orgId,
-    '--name',
-    inputs.name,
-    '--audience',
-    inputs.governAudience,
-    '--out',
-    inputs.out,
-    '--auth-url',
-    inputs.authUrl,
-    '--admin-audience',
-    inputs.adminAudience,
-    ...(inputs.expiresInDays !== undefined ? ['--expires-in-days', String(inputs.expiresInDays)] : []),
+    `--org=${inputs.orgId}`,
+    `--name=${inputs.name}`,
+    `--audience=${inputs.governAudience}`,
+    `--out=${inputs.out}`,
+    `--auth-url=${inputs.authUrl}`,
+    `--admin-audience=${inputs.adminAudience}`,
+    ...(inputs.expiresInDays !== undefined ? [`--expires-in-days=${inputs.expiresInDays}`] : []),
     '--json',
   ];
 }
