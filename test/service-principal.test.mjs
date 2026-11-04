@@ -185,12 +185,15 @@ const ROUTING_404 = 'error: The server answered 404 UNKNOWN: no message\n';
 test('the CLI line for a deployment that does not serve the routes says so, and exits non-zero', async () => {
   const { code, logs, printed } = await runWith({ status: 1, stdout: '', stderr: ROUTING_404 });
   assert.equal(code, 1);
-  assert.match(logs.join('\n'), /did not serve the service-principal routes on the authorization server's origin/);
+  const text = logs.join('\n');
+  assert.match(text, new RegExp(`The deployment answered 404 for the service-principal routes on ${AUTH.replace(/\./g, '\\.')}; the principal was not created`));
+  assert.match(text, /Ask the deployment's operator to serve them on the authorization server's origin/);
+  assert.doesNotMatch(text, /known|being fixed|production routing/i);
   assert.equal(printed.length, 0);
 });
 
 test('other 404s and "not found" text are not reported as a routing problem', () => {
-  const routing = /did not serve the service-principal routes/;
+  const routing = /answered 404 for the service-principal routes/;
   const npm = 'npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@noblecloak%2fcli\n';
   const json = 'error: The server answered 404 NOT_FOUND: organization not found\n';
   for (const stderr of [npm, json, 'error: the callback path 404 was not found']) {

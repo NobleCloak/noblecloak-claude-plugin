@@ -208,14 +208,14 @@ export function parseCliJson(stdout) {
 }
 
 /** A clear message and exit code for a failed CLI run. */
-export function mapCliFailure({ status, stderr = '' }) {
+export function mapCliFailure({ status, stderr = '' }, authUrl = '') {
   // The CLI's line for a 404 with no error body (api.ts: `The server answered ${status} ${code}: ${message}`). A JSON 404
   // (`404 NOT_FOUND: ...`), an npm registry 404 and any text that merely contains "404" or "not found" do not match.
   if (status === 1 && /^error: The server answered 404 UNKNOWN: no message$/m.test(stderr)) {
     return {
       exit: 1,
       message:
-        "The deployment did not serve the service-principal routes on the authorization server's origin (the create call answered 404). This is a known production routing issue being fixed; the principal was not created. Try again later, or ask the deployment's operator.",
+        `The deployment answered 404 for the service-principal routes on ${authUrl || 'the authorization server'}; the principal was not created. Ask the deployment's operator to serve them on the authorization server's origin.`,
     };
   }
   switch (status) {
@@ -257,7 +257,7 @@ export async function runServicePrincipal({
     return 1;
   }
   if (result.status !== 0) {
-    const failure = mapCliFailure(result);
+    const failure = mapCliFailure(result, inputs.authUrl);
     log(failure.message);
     return failure.exit;
   }
