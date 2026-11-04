@@ -150,7 +150,7 @@ async function registerConnection(accessToken, organizationId) {
 
 // ── Main Login Flow ─────────────────────────────────────────────────────
 
-async function login() {
+async function login(loginHint) {
   // Discover the AS endpoints up front — fails with an accurate message
   // ("token endpoint not yet available") instead of an NXDOMAIN.
   const { authorizationEndpoint, tokenEndpoint, registrationEndpoint } = await discoverEndpoints();
@@ -295,6 +295,10 @@ async function login() {
       // only when it cannot be derived, which preserves today's behaviour
       // rather than failing the login over a bad .mcp.json.
       if (resourceIndicator) authUrl.searchParams.set('resource', resourceIndicator);
+      // Routing hint for the authorization server (staff of an organisation
+      // that signs in with corporate SSO). Set only when an email argument
+      // was given; the server picks the sign-in pool, the client never does.
+      if (loginHint) authUrl.searchParams.set('login_hint', loginHint);
 
       console.log(FIRST_SIGN_IN_NOTE);
       console.log('Opening browser for NobleCloak authentication...');
@@ -318,14 +322,33 @@ async function login() {
   });
 }
 
+// ── Argument ────────────────────────────────────────────────────────────
+
+const USAGE = 'Usage: /noblecloak-login [you@yourcompany.com]';
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+
+/** The optional email argument, or null when absent. Exits 2 on anything else. */
+function parseLoginHint(args) {
+  if (args.length === 0) return null;
+  if (args.length > 1 || !EMAIL_SHAPE.test(args[0])) {
+    console.error(USAGE);
+    process.exit(2);
+  }
+  return args[0];
+}
+
 // ── Entry Point ─────────────────────────────────────────────────────────
+
+// Validated before migrateLegacyState(), so a bad argument makes no file,
+// browser or network call.
+const loginHint = parseLoginHint(process.argv.slice(2));
 
 try {
   // Before login, so a client.json registered by an earlier install is reused
   // (when it was registered at the authorization server discovered now).
   const { message } = migrateLegacyState();
   if (message) console.log(message);
-  const { authState } = await login();
+  const { authState } = await login(loginHint);
   console.log('\nSuccess! NobleCloak governance is active.');
   if (authState.orgId) {
     console.log(`Signed in as: ${authState.sub ?? 'unknown'}`);

@@ -195,6 +195,11 @@ softer visible line. If the plugin is signed out mid-session, the next tool call
 same message once per session. `/noblecloak-status` shows the signed-out state with its `since`
 and `reason`.
 
+`/noblecloak-login` takes one optional argument, an email (`/noblecloak-login you@yourcompany.com`),
+for staff of an organisation that signs in with corporate SSO. It is sent to the authorization
+server as `login_hint` on the authorize URL, so the server can route the sign-in; an argument
+that is not `local@domain` exits 2 with a usage line before any file, browser or network call.
+
 ### Where the hooks' messages show up
 
 Per the Claude Code hooks reference (code.claude.com/docs/en/hooks, checked 2026-10-20):

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { FIRST_SIGN_IN_NOTE } from '../scripts/lib/governance.mjs';
@@ -59,8 +59,8 @@ async function loginEnv(stub, extra = {}) {
 }
 
 /** Run login.mjs, answer the callback with a code and the state it sent, and wait for it to exit. */
-async function runLogin(env) {
-  const child = spawn(process.execPath, [LOGIN_PATH], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+async function runLogin(env, args = []) {
+  const child = spawn(process.execPath, [LOGIN_PATH, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   const done = new Promise((resolve) => child.on('close', (code) => resolve({ code, stdout, stderr })));
@@ -123,6 +123,87 @@ test('adv-2: with only NOBLECLOAK_ISSUER set, the connection registration goes t
     assert.equal(regs.length, 1, `registration reached the configured issuer: ${result.stderr}`);
     assert.equal(regs[0].headers.authorization, `Bearer ${stub.tokenResponse.access_token}`);
     assert.doesNotMatch(result.stderr, /api\.noblecloak\.com/);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('login-hint: no argument leaves login_hint off the authorize URL', async () => {
+  const stub = await asStub();
+  try {
+    const { env } = await loginEnv(stub);
+    const { authUrl, result } = await runLogin(env);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(authUrl.searchParams.has('login_hint'), false);
+    assert.equal(authUrl.search.includes('login_hint'), false);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('login-hint: a valid email is sent as login_hint exactly', async () => {
+  const stub = await asStub();
+  try {
+    const { env } = await loginEnv(stub);
+    const { authUrl, result } = await runLogin(env, ['Alice@NobleCloak.com']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(authUrl.searchParams.get('login_hint'), 'Alice@NobleCloak.com');
+  } finally {
+    await stub.close();
+  }
+});
+
+for (const bad of ['not-an-email', '@x.com', 'a@', 'a b@x.com', 'a@b@c.com', 'a@x']) {
+  test(`login-hint: ${JSON.stringify(bad)} exits 2 with a usage line and no browser or network call`, async () => {
+    const stub = await asStub();
+    try {
+      const { dir, env } = await loginEnv(stub);
+      const child = spawn(process.execPath, [LOGIN_PATH, bad], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      child.stdout.on('data', (d) => (out += d));
+      child.stderr.on('data', (d) => (out += d));
+      const code = await new Promise((resolve) => child.on('close', resolve));
+      assert.equal(code, 2, out);
+      assert.match(out, /^Usage: \/noblecloak-login \[you@yourcompany\.com\]\n$/);
+      assert.equal(stub.requests?.length ?? 0, 0, 'no request reached the stub');
+      assert.equal(out.includes('Opening browser'), false);
+      assert.equal(readdirSync(dir).length, 0, 'migrateLegacyState did not run');
+    } finally {
+      await stub.close();
+    }
+  });
+}
+
+test('login-hint: an invalid argument exits before migrateLegacyState moves any state', async () => {
+  const stub = await asStub();
+  try {
+    const { dir, env } = await loginEnv(stub);
+    // No NOBLECLOAK_STATE_DIR, so the migration is live: HOME is a scratch dir and
+    // NOBLECLOAK_MIGRATE_FROM holds an auth.json that a run would move into it.
+    const legacy = join(dir, 'legacy');
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, 'auth.json'), '{}');
+    const home = join(dir, 'home');
+    mkdirSync(home);
+    const { NOBLECLOAK_STATE_DIR, ...rest } = env;
+    const child = spawn(process.execPath, [LOGIN_PATH, 'nope'], {
+      env: { ...rest, HOME: home, NOBLECLOAK_MIGRATE_FROM: legacy },
+      stdio: 'ignore',
+    });
+    assert.equal(await new Promise((resolve) => child.on('close', resolve)), 2);
+    assert.equal(existsSync(join(home, '.noblecloak')), false, 'nothing was migrated into HOME');
+    assert.equal(existsSync(join(legacy, 'auth.json')), true, 'the legacy auth.json is untouched');
+  } finally {
+    await stub.close();
+  }
+});
+
+test('login-hint: more than one argument exits 2', async () => {
+  const stub = await asStub();
+  try {
+    const { env } = await loginEnv(stub);
+    const child = spawn(process.execPath, [LOGIN_PATH, 'a@x.com', 'b@x.com'], { env, stdio: 'ignore' });
+    assert.equal(await new Promise((resolve) => child.on('close', resolve)), 2);
   } finally {
     await stub.close();
   }
