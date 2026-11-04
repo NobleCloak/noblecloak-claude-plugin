@@ -116,10 +116,17 @@ anything auth-shaped:
 - **Claude Code's native MCP OAuth token** — separate, owned by Claude Code,
   **unreadable from here**.
 
-Both bind whichever organization was default *when they were issued*, and
-they are issued at different moments, so they can disagree. This is why
+Each binds the organization picked on its own consent page *when it was issued*
+(the default organization is only preselected there), and they are issued at
+different moments, so they can disagree. This is why
 `/noblecloak-status` labels its org line "hooks token" and why fixing a
 wrong-org problem needs `/noblecloak-login` **and** an `/mcp` reconnect.
+
+The organization shown after sign-in was chosen on the consent page. To use a different one,
+re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
+it). The MCP server connection holds its own token, so reconnect it from `/mcp` after changing
+organizations, and pick the same organization on its consent page (it preselects your default
+organization, not the one you just chose, unless you ticked the checkbox).
 
 ## When governance goes quiet
 

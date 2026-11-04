@@ -5,16 +5,16 @@
  * Beyond token validity, this reports the two facts that diagnose the
  * "Tool 'X' not found in catalog" dead-end:
  *   1. WHO/WHERE — the org the governance-hooks token is bound to. Every
- *      gateway tool call resolves against the bound org's catalog, and the AS
- *      picks that org invisibly (default-org selection).
+ *      gateway tool call resolves against the bound org's catalog, and the
+ *      org is chosen on the consent page at login.
  *   2. Catalog health — one authenticated tools/list against the gateway:
  *      "Catalog: N tools visible". N=0 means every dispatch WILL fail; the
  *      remediation is printed inline.
  *
  * Two-token seam: this script can only see the plugin's own auth.json token
  * (the governance hooks' custodian). Claude Code's native MCP OAuth holds a
- * SEPARATE token for the live gateway session — same AS default-org path, so
- * the bindings normally agree, but only the gateway can say authoritatively
+ * SEPARATE token for the live gateway session — each token binds the org picked on its own
+ * consent page, so the bindings normally agree, but only the gateway can say authoritatively
  * (a gateway-side introspection ask). The output labels the org as the HOOKS
  * token's binding for exactly this reason.
  *
@@ -152,7 +152,7 @@ if (identity?.orgId) {
     "  All NobleCloak gateway tool calls resolve against this org's catalog. Claude Code's"
   );
   console.log(
-    '  native MCP session holds its own token (same AS default-org path — normally the same org).'
+    '  native MCP session holds its own token (it binds the org picked on its own consent page — normally the same org).'
   );
 } else {
   console.log('Organization (hooks token): UNKNOWN — token carries no org_id claim.');

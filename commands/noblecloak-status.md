@@ -15,8 +15,8 @@ Report the output to the user. The script shows the governance session state (to
 
 Interpretation guide:
 - "Not connected" / "Token expired" → suggest `/noblecloak-login`.
-- `Catalog: 0 tools visible` → the bound org has no cataloged tools; every tool call will fail with "not found in catalog". Suggest connecting an MCP service in that org, or switching the default org and re-running `/noblecloak-login`, then reconnecting via `/mcp`.
-- Wrong `Organization` → the AS binds the default org invisibly; the user should change their default org, re-login, AND reconnect the MCP server from `/mcp` (it holds a separate token).
+- `Catalog: 0 tools visible` → the bound org has no cataloged tools; every tool call will fail with "not found in catalog". Suggest connecting an MCP service in that org, or re-running `/noblecloak-login` and picking another org on the consent page, then reconnecting via `/mcp`.
+- Wrong `Organization` → the org was chosen on the consent page; the user should re-run `/noblecloak-login`, pick the right org there, AND reconnect the MCP server from `/mcp` (it holds a separate token).
 - `Sign-in: SIGNED OUT since …` → the refresh grant was rejected; the hooks are making no COO calls (no policy checks, no audit delivery). Suggest `/noblecloak-login`.
 - `REFUSED for the current org` / `Audit runs refused by COO (tenant_run_mismatch)` → this Claude Code session's audit run was created under a different org than the current sign-in, and COO refuses its events. Suggest starting a new Claude Code session, or signing back in to the original org.
 - `Audit breaker: open` → audit delivery to COO is failing (5xx, timeouts, COO refusing the token with 401 even after a refresh, or a 4xx without a recognised permanent code such as a proxy 404 or a gateway 403); events are kept locally and retried.

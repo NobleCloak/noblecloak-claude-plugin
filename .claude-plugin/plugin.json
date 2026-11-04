@@ -1,6 +1,6 @@
 {
   "name": "noblecloak",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Connect Claude Code to your NobleCloak workspace \u2014 governed local execution and your organization's entitled MCP tools",
   "author": {
     "name": "NobleCloak",

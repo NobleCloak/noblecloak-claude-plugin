@@ -93,7 +93,6 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | `NOBLECLOAK_LOCAL_ENFORCE` | `false` (audit-only) | Flip to `true` to enforce server decisions |
 | `NOBLECLOAK_COO_URL` | `https://api.noblecloak.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
 | `NOBLECLOAK_ISSUER` | `https://api.noblecloak.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
-| `NOBLECLOAK_API_URL` | the issuer (`NOBLECLOAK_ISSUER` or its default) | Base for `/noblecloak-login`'s connection registration, `POST {base}/mcp/connections` |
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
 | `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
@@ -220,14 +219,21 @@ PostToolUse dispatcher) shows each one as `systemMessage`, **once per Claude Cod
 
 The plugin's `~/.noblecloak/claude-plugin/auth.json` token drives the governance hooks; **Claude Code's native MCP
 OAuth holds a separate token** for the live gateway session (the committed, tokenless
-`.mcp.json` only declares the server). Both tokens are minted by the same AS default-org
-selection, so their org bindings normally agree — but they are minted at different moments and
-CAN drift (default org changed between logins): local-resolve audits would then run against
+`.mcp.json` only declares the server). Each token binds the organization picked on its own consent
+page (the default organization is only preselected there), so their org bindings normally agree
+— but they are minted at different moments and CAN drift (a different org picked on the two
+consent pages): local-resolve audits would then run against
 org A while gateway `tools/call`s resolve org B's catalog. There is no client-side way to read
 the native token; `/noblecloak-status` therefore labels its org line "hooks token" and the
 authoritative session-org echo is a gateway-side ask. When the bindings are suspected
 to differ, re-run `/noblecloak-login` AND reconnect the MCP server from `/mcp` so both re-mint
-against the current default org.
+against the organization you pick on each consent page.
+
+The organization shown after sign-in was chosen on the consent page. To use a different one,
+re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
+it). The MCP server connection holds its own token, so reconnect it from `/mcp` after changing
+organizations, and pick the same organization on its consent page (it preselects your default
+organization, not the one you just chose, unless you ticked the checkbox).
 
 Login persists the hooks token's `orgId`/`sub` into `auth.json`, and `/noblecloak-status` probes
 the gateway catalog (`Catalog: N tools visible`) — N=0 is the "every dispatch will 404"
@@ -261,7 +267,7 @@ When the breaker opens, the next tool call tells the user once per session.
 
 COO files a Claude Code session's local audit under an audit run whose id **is the session
 id**, created in the org of the first token that posted to it. If you then sign in to a
-different org (for example `/noblecloak-login` after your default org changed), COO refuses
+different org (for example `/noblecloak-login` after you picked a different org on the consent page), COO refuses
 every later event for that run with 403 `tenant_run_mismatch`. That is permanent for the run,
 and a **resumed** Claude Code session keeps its session id, so it never recovers on its own.
 

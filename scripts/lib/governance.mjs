@@ -55,13 +55,9 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            endpoint is {base}/v1/coo/local/resolve. Default:
 //                            the same production API host, where the COO API
 //                            is served under /v1/coo.
-//   NOBLECLOAK_API_URL         Base for login's connection registration
-//                            (POST {base}/mcp/connections). Default: the
-//                            issuer above (NOBLECLOAK_ISSUER or its default).
 //   The hooks and scripts use another deployment (a non-production one
 //   included) when these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE are
-//   set (NOBLECLOAK_API_URL follows NOBLECLOAK_ISSUER unless set); Claude Code's
-//   own MCP connection reads the committed .mcp.json.
+//   set; Claude Code's own MCP connection reads the committed .mcp.json.
 //   NOBLECLOAK_LOCAL_ENFORCE   'true'/'1' flips the PreToolUse adapter from
 //                            audit-only (default) to enforce mode.
 //   NOBLECLOAK_DEV_TOKEN       DEV-ONLY bearer-token override while Core OAuth AS
@@ -668,14 +664,14 @@ export function pluginVersion(pluginRoot = PLUGIN_ROOT) {
 //
 // The access token's org binding is the single fact that diagnoses the
 // "Tool 'X' not found in catalog" dead-end: ALL gateway tool calls
-// resolve against the bound org's catalog, and the AS picks that org invisibly
-// (default-org selection — no client-side choice today). Decode it, persist it
+// resolve against the bound org's catalog, and the org is chosen on the
+// consent page at login. Decode it, persist it
 // at login, display it in status.
 //
 // TWO-TOKEN SEAM (documented, not solved here): this plugin's auth.json token
 // drives the governance hooks; Claude Code's native MCP OAuth holds a SEPARATE
-// token for the live gateway session. Both are minted by the same AS
-// default-org path, so they normally bind the same org — but only the gateway
+// token for the live gateway session. Each binds the org picked on
+// its own consent page, so they normally bind the same org — but only the gateway
 // can say authoritatively which org a live MCP session is bound to
 // (a gateway-side introspection ask). Everything here reports the HOOKS token's binding.
 
@@ -700,7 +696,7 @@ export function decodeJwtClaims(token) {
  * The identity bound into an auth state's access token: `{ sub, orgId }` (each
  * possibly undefined), or null when there is no decodable token. The LIVE
  * access token is the source of truth — the refresh path re-mints the token
- * (possibly against a changed default org) and a stale persisted binding would
+ * (possibly against a different org picked on the consent page) and a stale persisted binding would
  * make status report org A while the catalog probe (which sends the live
  * token) reports org B: an internally-contradictory diagnostic in exactly the
  * org-mismatch scenario this feature exists to diagnose. The persisted
