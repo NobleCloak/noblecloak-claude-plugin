@@ -124,8 +124,8 @@ export async function resolveServicePrincipalInputs({
     throw new ServicePrincipalError(`${out} is inside a git work tree, where the credential could be committed. Pass an --out outside any repository.`, 2);
   }
 
-  // The CLI writes the credential after the server create and does not create directories, so a missing parent would leave an
-  // orphaned principal. The default directory is created by runServicePrincipal.
+  // The CLI refuses this too (exit 2, before sign-in); checked here so the message is the plugin's.
+  // The default directory is created by runServicePrincipal.
   if (flags.out && !isDirectory(dirname(out))) {
     throw new ServicePrincipalError(`The parent directory of ${out} does not exist or is not a directory; create it first (nothing was created).`, 2);
   }
@@ -262,7 +262,14 @@ export async function runServicePrincipal({
     log(err.message);
     return err.exit;
   }
-  if (inputs.defaultOut) mkdirSync(dirname(inputs.out), { recursive: true, mode: 0o700 });
+  if (inputs.defaultOut) {
+    try {
+      mkdirSync(dirname(inputs.out), { recursive: true, mode: 0o700 });
+    } catch (err) {
+      log(`Cannot create the credential directory ${dirname(inputs.out)} (${err.code ?? err.message}); nothing was created. Remove whatever is in the way or pass --out.`);
+      return 2;
+    }
+  }
   log(`Creating service principal "${inputs.name}" in organization ${inputs.orgId} (CLI ${CLI_PACKAGE}@${CLI_VERSION}). A sign-in link follows; open it as the organization's administrator.`);
   const result = await run(buildCliArgs(inputs), { env });
   if (result.error) {

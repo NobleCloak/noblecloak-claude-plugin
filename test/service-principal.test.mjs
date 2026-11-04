@@ -100,7 +100,7 @@ test('refuses an --out inside a git work tree, including a not-yet-created subdi
   await assert.rejects(resolveServicePrincipalInputs(inputsOf({ home })), /inside a git work tree/);
 });
 
-test('a custom --out needs an existing parent directory (the CLI does not create one); the default directory is created with mode 0700', async () => {
+test('a custom --out needs an existing parent directory (the CLI refuses it too, before sign-in; checked here for the plugin\'s own message); the default directory is created with mode 0700', async () => {
   const base = mkTmp('sp-out-');
   const missing = join(base, 'no', 'such', 'cred.json');
   const notDir = join(base, 'file');
@@ -118,6 +118,27 @@ test('a custom --out needs an existing parent directory (the CLI does not create
   const code = await runServicePrincipal({ env: session(), cwd: mkTmp('sp-proj-'), home, discover, run: async () => ({ status: 0, stdout: cliJson() }), log: () => {}, print: () => {} });
   assert.equal(code, 0);
   assert.equal(statSync(join(home, '.noblecloak', ORG)).mode & 0o777, 0o700);
+});
+
+test('refuses an --out that reaches a git work tree through a symlink', async () => {
+  const repo = mkTmp('sp-repo-');
+  mkdirSync(join(repo, '.git'));
+  mkdirSync(join(repo, 'sub'));
+  const links = mkTmp('sp-links-');
+  const { symlinkSync } = await import('node:fs');
+  symlinkSync(join(repo, 'sub'), join(links, 'L'));
+  await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out: join(links, 'L', 'cred.json') } })), /inside a git work tree/);
+});
+
+test('a default credential directory that cannot be created (a file is in the way) is refused with exit 2, not thrown', async () => {
+  const home = mkTmp('sp-home-');
+  writeFileSync(join(home, '.noblecloak'), 'x');
+  const calls = [];
+  const logs = [];
+  const code = await runServicePrincipal({ env: session(), cwd: mkTmp('sp-proj-'), home, discover, run: async (a) => (calls.push(a), { status: 0, stdout: cliJson() }), log: (m) => logs.push(m), print: () => {} });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(logs.join('\n'), /Cannot create the credential directory .*\.noblecloak.*nothing was created/);
 });
 
 test('refuses an existing --out path (file or dangling symlink)', async () => {
