@@ -18,7 +18,7 @@
     },
     "langgraph": {
       "repo": "NobleCloak/noblecloak-langgraph-ts",
-      "sha": "55b2ef7ca6468abc712a2049da5f68873898f1d2",
+      "sha": "6357cdae966bb87f45d9ca33e2c7366e1021b0bb",
       "path": "skills/langgraph"
     }
   },
@@ -26,7 +26,7 @@
     "react": "0.8.4",
     "client": "0.11.1",
     "theme": "0.1.2",
-    "langgraph": "0.4.0"
+    "langgraph": "0.4.1"
   },
   "files": {
     "setup-skills/noblecloak-setup-approvals/SKILL.md": "5cd2b37df9500f507ea310921e3372c3fc31f97c9b56b9a1cb9d9d1b3ba4df1c",
@@ -49,9 +49,9 @@
     "setup-skills/noblecloak-setup-connections/templates/connections/config.ts": "5560f8f14a6dda51133436eb6f1ad9c64705d2d93eb1cdc8763b9662767015ba",
     "setup-skills/noblecloak-setup-connections/templates/connections/layout.tsx": "24233c870406d65d8349441da6ef20deacdbaf08872a43a890adb73ea6ff36ae",
     "setup-skills/noblecloak-setup-connections/templates/connections/page.tsx": "a665971913ac13b9151658eec8285f1276f6d09a68931d539a96cd16f56b32b2",
-    "setup-skills/noblecloak-setup-langgraph/SKILL.md": "12838241788e2bcf608c3808d106abdb4fd40b72e3366631bcd2f3e9c3b52765",
+    "setup-skills/noblecloak-setup-langgraph/SKILL.md": "e3bc4ae2a80bb839afdf64a2a438d4327b50a3cd569ab74817ccea59b62dde3e",
     "setup-skills/noblecloak-setup-langgraph/scripts/apply.mjs": "63a7f1aae717d87060496510d1cecfd6bf3e34c1078bef0fe4daed86a1d4b089",
-    "setup-skills/noblecloak-setup-langgraph/scripts/propose.mjs": "1c19ac4b4600916b919f732359de1c0fb6079b424ea3da28f1bffbdb446e4317",
+    "setup-skills/noblecloak-setup-langgraph/scripts/propose.mjs": "7e08ca7d0c3cdd007cfc81cbf551add08e12ee9ee582375d54eef15b2db97164",
     "setup-skills/noblecloak-setup-langgraph/templates/agent.json": "88419cdf245aeec7dfa5c4529a3d604c030ef487c703c1f15865fff06356779b",
     "setup-skills/noblecloak-setup-langgraph/templates/governance.ts": "6fe2f9f700800a7fcc2c9b487f1620028f0ca89b09052000ccba736232c4774a",
     "setup-skills/noblecloak-setup-langgraph/templates/log.ts": "c97498f57dd5f307dfe7faf2550aff4061057230d3e607024a04f57fb93bff72",
