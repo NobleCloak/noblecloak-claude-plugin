@@ -180,11 +180,33 @@ test('success without a path in the JSON falls back to the --out it asked for', 
   assert.match(printed.join('\n'), new RegExp(`NOBLECLOAK_SP_CREDENTIALS=${out.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
 
-test('a 404 from the create call says the routes were not served on the AS origin, and exits non-zero', async () => {
-  const { code, logs, printed } = await runWith({ status: 1, stdout: '', stderr: 'POST /sp failed: 404 Not Found' });
+const ROUTING_404 = 'error: The server answered 404 UNKNOWN: no message\n';
+
+test('the CLI line for a deployment that does not serve the routes says so, and exits non-zero', async () => {
+  const { code, logs, printed } = await runWith({ status: 1, stdout: '', stderr: ROUTING_404 });
   assert.equal(code, 1);
   assert.match(logs.join('\n'), /did not serve the service-principal routes on the authorization server's origin/);
   assert.equal(printed.length, 0);
+});
+
+test('other 404s and "not found" text are not reported as a routing problem', () => {
+  const routing = /did not serve the service-principal routes/;
+  const npm = 'npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@noblecloak%2fcli\n';
+  const json = 'error: The server answered 404 NOT_FOUND: organization not found\n';
+  for (const stderr of [npm, json, 'error: the callback path 404 was not found']) {
+    assert.doesNotMatch(mapCliFailure({ status: 1, stderr }).message, routing, stderr);
+  }
+  // the routing line only counts at exit 1
+  assert.doesNotMatch(mapCliFailure({ status: 3, stderr: ROUTING_404 }).message, routing);
+  // exit 3 / 4 keep their own code and message when stderr says "not found"
+  const notFound = 'error: administrator not found\n';
+  assert.equal(mapCliFailure({ status: 3, stderr: notFound }).exit, 3);
+  assert.equal(mapCliFailure({ status: 4, stderr: notFound }).exit, 4);
+  assert.match(mapCliFailure({ status: 4, stderr: notFound }).message, /not an administrator/);
+  // a post-create network failure whose hint mentions a 404 in a name or path
+  const hint = 'error: could not write /home/u/.noblecloak/404/x.json\n';
+  assert.equal(mapCliFailure({ status: 1, stderr: hint }).exit, 1);
+  assert.doesNotMatch(mapCliFailure({ status: 1, stderr: hint }).message, routing);
 });
 
 test('other CLI failures map by exit code; success with no sp_id is a failure', async () => {

@@ -209,7 +209,9 @@ export function parseCliJson(stdout) {
 
 /** A clear message and exit code for a failed CLI run. */
 export function mapCliFailure({ status, stderr = '' }) {
-  if (/\b404\b/.test(stderr) || /not found/i.test(stderr)) {
+  // The CLI's line for a 404 with no error body (api.ts: `The server answered ${status} ${code}: ${message}`). A JSON 404
+  // (`404 NOT_FOUND: ...`), an npm registry 404 and any text that merely contains "404" or "not found" do not match.
+  if (status === 1 && /^error: The server answered 404 UNKNOWN: no message$/m.test(stderr)) {
     return {
       exit: 1,
       message:
