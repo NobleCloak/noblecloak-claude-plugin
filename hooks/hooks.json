@@ -1,5 +1,5 @@
 {
-  "description": "NobleCloak plugin hooks — refresh auth tokens on session start; resolve local tool calls against COO governance (audit-only by default, NOBLECLOAK_LOCAL_ENFORCE=true to enforce)",
+  "description": "NobleCloak plugin hooks — refresh auth tokens on session start; resolve MCP tool calls against COO governance (audit-only by default, NOBLECLOAK_LOCAL_ENFORCE=true to enforce); local tools (Bash, Edit, WebFetch, …) are not observed",
   "hooks": {
     "SessionStart": [
       {
@@ -15,7 +15,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Bash|Edit|Write|Read|Glob|Grep|WebFetch|Agent|mcp__.*)$",
+        "matcher": "^mcp__.*$",
         "hooks": [
           {
             "type": "command",
@@ -27,7 +27,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^(Bash|Edit|Write|Read|Glob|Grep|WebFetch|Agent|mcp__.*)$",
+        "matcher": "^mcp__.*$",
         "hooks": [
           {
             "type": "command",
@@ -38,7 +38,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "^(Bash|Edit|Write|Read|Glob|Grep|WebFetch|Agent|mcp__.*)$",
+        "matcher": "^mcp__.*$",
         "hooks": [
           {
             "type": "command",

@@ -17,7 +17,7 @@ Pinned to **Claude Code ≥ 2.1.165** hook-input shapes.
 
 ## What is matched
 
-`hooks/hooks.json` matcher: `^(Bash|Edit|Write|Read|Glob|Grep|WebFetch|Agent|mcp__.*)$`
+`hooks/hooks.json` matcher: `^mcp__.*$` (since 0.2.1; local tools such as `Bash`, `Edit` and `WebFetch` are not observed: ruled 2026-11-04, a per-organisation setting to widen the scope is planned). The summaries below for local tools describe what the hook would send if a matcher included them.
 
 NobleCloak MCP tools match the regex but are **immediately allowed by the script** without a
 resolve call — they are governed by the COO MCP gateway already (no double-enforcement,
