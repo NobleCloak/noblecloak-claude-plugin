@@ -453,10 +453,12 @@ test('hooks.json keeps the SessionStart refresh hook and adds the PreToolUse mat
   assert.match(pre.hooks[0].command, /pre-tool-use\.mjs/);
 
   const matcher = new RegExp(pre.matcher);
-  for (const name of ['Bash', 'Edit', 'Write', 'Read', 'Glob', 'Grep', 'WebFetch', 'Agent', 'mcp__github__x', 'mcp__noblecloak__y']) {
+  // MCP calls only (ruled 2026-11-04): the organisation's policy is about the tools it governs. Local tools are
+  // not observed at all, so no resolve and no audit event is produced for them.
+  for (const name of ['mcp__github__x', 'mcp__noblecloak__y', 'mcp__plugin_noblecloak_noblecloak__search_records']) {
     assert.match(name, matcher, `${name} should match (mcp__noblecloak excluded in script, not matcher)`);
   }
-  for (const name of ['Task', 'TodoWrite', 'NotebookEdit', 'BashOutput', 'WebSearch']) {
+  for (const name of ['Bash', 'Edit', 'Write', 'Read', 'Glob', 'Grep', 'WebFetch', 'Agent', 'Task', 'TodoWrite', 'NotebookEdit', 'BashOutput', 'WebSearch']) {
     assert.doesNotMatch(name, matcher, `${name} should NOT match`);
   }
 });

@@ -36,7 +36,7 @@ sends. The rest of this file is the orientation for people working *on* the plug
 | Commands | `/noblecloak-login`, `/noblecloak-logout`, `/noblecloak-status`, `/noblecloak-connect`, `/noblecloak-propose-tool`, `/noblecloak-setup` |
 | Agents | `noblecloak-assistant` (your organization's entitled tools through the gateway) |
 | Skills | `noblecloak-help`. The setup skills `noblecloak-setup-{approvals,permissions,connections,langgraph}` are bundled in `setup-skills/`, outside the auto-discovered `skills/`, so they run only through `/noblecloak-setup` |
-| Hooks | `SessionStart` token refresh; `PreToolUse` governance resolve; `PostToolUse` / subagent event reporting |
+| Hooks | `SessionStart` token refresh; `PreToolUse` governance resolve and `PostToolUse` reporting for MCP tool calls only; subagent lifecycle events |
 | MCP | A committed, **tokenless** `.mcp.json` declaring the gateway. Claude Code owns the live connection via native OAuth — no script writes this file |
 
 ## Set up NobleCloak in your project
@@ -90,11 +90,11 @@ once.
 
 ## Privacy posture in one paragraph
 
-The hooks match `Bash`, `Edit`, `Write`, `Read`, `Glob`, `Grep`, `WebFetch`,
-`Agent` and `mcp__*` calls. **Raw tool input never leaves the machine** — only
-a SHA-256 digest of the canonicalized input and a deliberately lossy per-tool
-summary (`Bash` → first token, `Edit`/`Write` → cwd-relative path, `WebFetch`
-→ domain only, everything else → tool name). NobleCloak's own MCP tools skip
+The hooks match `mcp__*` calls only: the organisation's policy is about the tools it
+governs, and local tools (`Bash`, `Edit`, `Write`, `Read`, `Glob`, `Grep`, `WebFetch`,
+`Agent`) are not observed, resolved or reported (a per-organisation setting to widen
+this is planned). **Raw tool input never leaves the machine** — only a SHA-256 digest
+of the canonicalized input and the tool's name. NobleCloak's own MCP tools skip
 the local resolve entirely; they are already governed at the gateway. The
 plugin is **audit-only by default** and blocks nothing unless
 `NOBLECLOAK_LOCAL_ENFORCE=true`.
