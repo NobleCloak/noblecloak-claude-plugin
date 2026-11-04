@@ -2168,11 +2168,11 @@ export function failModeDecision(sideEffectLevel, enforce) {
 // unknown_ce_type), and these are the values it lists for this plugin. They
 // change only together with the deployment, which must accept a new value
 // before the plugin sends it.
-export const CE_SOURCE_LOCAL_EXECUTION = 'bianoble/local-execution/claude-code';
-export const CE_TYPE_TOOL_CALL_AUTHORIZED = 'com.bianoble.tool.call.authorized.v1';
-export const CE_TYPE_TOOL_CALL_DENIED = 'com.bianoble.tool.call.denied.v1';
-export const CE_TYPE_SUBAGENT_STARTED = 'com.bianoble.local.subagent.started.v1';
-export const CE_TYPE_SUBAGENT_STOPPED = 'com.bianoble.local.subagent.stopped.v1';
+export const CE_SOURCE_LOCAL_EXECUTION = 'noblecloak/local-execution/claude-code';
+export const CE_TYPE_TOOL_CALL_AUTHORIZED = 'com.noblecloak.tool.call.authorized.v1';
+export const CE_TYPE_TOOL_CALL_DENIED = 'com.noblecloak.tool.call.denied.v1';
+export const CE_TYPE_SUBAGENT_STARTED = 'com.noblecloak.local.subagent.started.v1';
+export const CE_TYPE_SUBAGENT_STOPPED = 'com.noblecloak.local.subagent.stopped.v1';
 
 /** Per-attempt audit POST timeout — the worker awaits this, then spills on abort. */
 export const DEFAULT_EVENT_TIMEOUT_MS = 2000;
