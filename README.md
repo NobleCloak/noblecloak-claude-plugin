@@ -15,7 +15,8 @@ plugin from it, and sign in:
 ```
 
 If you do not have a NobleCloak account yet, signing in creates one, with a
-personal workspace.
+personal workspace. Staff of an organisation that signs in with corporate SSO:
+`/noblecloak-login you@yourcompany.com`.
 
 Both the marketplace and the plugin are named `noblecloak`. Updates arrive
 through `/plugin marketplace update noblecloak` followed by

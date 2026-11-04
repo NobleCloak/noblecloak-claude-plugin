@@ -300,7 +300,7 @@ test('wiring: a hook-side loadAuthState finds the old sign-in without a SessionS
 test('wiring (source scan; login needs a browser): login.mjs migrates before it starts the OAuth flow', () => {
   const src = readFileSync(join(REPO_ROOT, 'scripts', 'login.mjs'), 'utf-8');
   const migrate = src.indexOf('migrateLegacyState()');
-  const login = src.indexOf('await login()');
+  const login = src.indexOf('await login(loginHint)');
   assert.ok(migrate !== -1 && login !== -1, 'both calls present');
   assert.ok(migrate < login, 'migration runs before login()');
 });

@@ -10,8 +10,13 @@ If you do not have a NobleCloak account yet, signing in creates one, with a pers
 Execute this command:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/login.mjs
+IFS= read -r NOBLECLOAK_LOGIN_EMAIL <<'NOBLECLOAK_LOGIN_ARGUMENT'
+$ARGUMENTS
+NOBLECLOAK_LOGIN_ARGUMENT
+node ${CLAUDE_PLUGIN_ROOT}/scripts/login.mjs "$NOBLECLOAK_LOGIN_EMAIL"
 ```
+
+Staff of an organisation that signs in with corporate SSO: `/noblecloak-login you@yourcompany.com`.
 
 This will:
 1. Open your browser to the NobleCloak login page
