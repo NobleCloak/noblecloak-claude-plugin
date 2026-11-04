@@ -218,7 +218,8 @@ async function login(loginHint) {
              <small>All NobleCloak tool calls resolve against this workspace's catalog.
              This organization was chosen on the consent page. To use a different one, re-run /noblecloak-login and
              pick it there (tick "Make this my default organization" to keep it). The MCP server connection holds
-             its own token, so reconnect it from /mcp after changing organizations.</small></p>`
+             its own token, so reconnect it from /mcp after changing organizations and pick the same organization
+             on its consent page (it preselects your default organization unless you ticked the checkbox).</small></p>`
           : `<p><strong>Warning:</strong> the session token carries no organization binding —
              tool calls may fail with "not found in catalog". Run /noblecloak-status in Claude Code
              for diagnosis.</p>`;
@@ -324,7 +325,8 @@ try {
       'All NobleCloak tool calls resolve against this workspace’s catalog. This organization was ' +
         'chosen on the consent page. To use a different one, re-run /noblecloak-login and pick it ' +
         'there (tick "Make this my default organization" to keep it). The MCP server connection ' +
-        'holds its own token, so reconnect it from /mcp after changing organizations.'
+        'holds its own token, so reconnect it from /mcp after changing organizations and pick the same ' +
+        'organization on its consent page (it preselects your default organization unless you ticked the checkbox).'
     );
   } else {
     console.log(

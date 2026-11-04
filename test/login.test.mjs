@@ -129,6 +129,7 @@ test('adv-2: a successful login makes no connection-registration request, and th
       assert.match(text, /chosen on the consent page/);
       assert.match(text, /Make this my default organization/);
       assert.match(text, /reconnect it from \/mcp/);
+      assert.match(text, /pick the same organization\s+on its consent page/);
     }
     for (const text of [result.stdout, result.stderr, html]) {
       assert.doesNotMatch(text, /connection registration/i);

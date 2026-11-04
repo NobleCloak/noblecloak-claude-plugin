@@ -232,7 +232,8 @@ against the organization you pick on each consent page.
 The organization shown after sign-in was chosen on the consent page. To use a different one,
 re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
 it). The MCP server connection holds its own token, so reconnect it from `/mcp` after changing
-organizations.
+organizations, and pick the same organization on its consent page (it preselects your default
+organization, not the one you just chose, unless you ticked the checkbox).
 
 Login persists the hooks token's `orgId`/`sub` into `auth.json`, and `/noblecloak-status` probes
 the gateway catalog (`Catalog: N tools visible`) — N=0 is the "every dispatch will 404"

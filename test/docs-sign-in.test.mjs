@@ -27,6 +27,7 @@ for (const file of DOCS) {
     assert.match(text, /chosen on the consent page/);
     assert.match(text, /Make this my default organization/);
     assert.match(text, /holds its own token, so reconnect it from `\/mcp`/);
+    assert.match(text, /pick the same organization on its consent page/);
   });
 }
 
