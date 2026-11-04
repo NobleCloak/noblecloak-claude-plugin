@@ -198,7 +198,7 @@ and `reason`.
 `/noblecloak-login` takes one optional argument, an email (`/noblecloak-login you@yourcompany.com`),
 for staff of an organisation that signs in with corporate SSO. It is sent to the authorization
 server as `login_hint` on the authorize URL, so the server can route the sign-in; an argument
-that is not `local@domain` exits 2 with a usage line before any file, browser or network call.
+that is not an email address with a dotted domain (`local@domain.tld`) exits 2 with a usage line before any file, browser or network call.
 
 ### Where the hooks' messages show up
 
