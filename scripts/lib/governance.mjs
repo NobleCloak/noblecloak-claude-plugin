@@ -2898,8 +2898,8 @@ export function recordWorkerDegraded(reason, env = process.env) {
  * POST one envelope to the events endpoint and report whether it reached ingest.
  *
  * Returns EMIT_DELIVERED on a 2xx; EMIT_REJECTED when COO refuses it
- * permanently (403 tenant_run_mismatch, or 400/422 validation_error which COO
- * does not send today — see classifyEmitFailure) or its run is already known refused for this org —
+ * permanently (403 tenant_run_mismatch, 400/422 validation_error, or 413
+ * payload_too_large — see classifyEmitFailure) or its run is already known refused for this org —
  * dead-lettered, never spilled, breaker untouched; and EMIT_SPILLED otherwise
  * (no usable token, breaker open, network failure, timeout, 401, 5xx, and every
  * other 4xx) — having spilled the envelope to
