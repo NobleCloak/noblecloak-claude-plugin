@@ -253,8 +253,7 @@ COO's local-events route sends 400 `validation_error` for a rejected payload (`d
 `cloudevents_envelope_invalid`, `unknown_ce_type`, `unknown_ce_source`, non-JSON), so those are
 dead-lettered. It answers an oversize body as 413 `payload_too_large`, also dead-lettered: an
 envelope over the cap never fits on a retry. It keeps 400 `bad_request` for a server fault, which is
-retried and counts toward the breaker. The
-`validation_error` rows take effect once COO sends that code for payload rejections.
+retried and counts toward the breaker.
 
 When the breaker opens, the next tool call tells the user once per session.
 
