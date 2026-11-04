@@ -6,9 +6,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { FIRST_SIGN_IN_NOTE } from '../scripts/lib/governance.mjs';
@@ -153,9 +154,42 @@ test('login-hint: a blank argument (the quoted empty $ARGUMENTS) is treated as n
   }
 });
 
-test('login-hint: the command template single-quotes $ARGUMENTS so the shell cannot interpret it', () => {
+test('login-hint: the command template delivers any argument as one argv entry without running shell syntax in it', async () => {
   const md = readFileSync(join(REPO_ROOT, 'commands', 'noblecloak-login.md'), 'utf-8');
-  assert.ok(md.includes("scripts/login.mjs '$ARGUMENTS'"));
+  const block = md.match(/```bash\n([\s\S]*?)\n```/)[1];
+  const root = mkdtempSync(join(tmpdir(), 'nc-template-'));
+  try {
+    mkdirSync(join(root, 'scripts'));
+    writeFileSync(join(root, 'scripts', 'login.mjs'), 'console.log(JSON.stringify(process.argv.slice(2)));\n');
+    const cases = [
+      '',
+      "o'brien@company.com",
+      `a@b.com'; touch ${join(root, 'pwned')}; echo '`,
+      `a@b.com"; touch ${join(root, 'pwned')}; echo "`,
+      `$(touch ${join(root, 'pwned')})@b.com`,
+      `\`touch ${join(root, 'pwned')}\`@b.com`,
+    ];
+    for (const arg of cases) {
+      const cmd = block.replaceAll('${CLAUDE_PLUGIN_ROOT}', root).replaceAll('$ARGUMENTS', () => arg);
+      const out = execFileSync('bash', ['-c', cmd], { encoding: 'utf-8' });
+      assert.deepEqual(JSON.parse(out), [arg], `argument ${JSON.stringify(arg)}`);
+    }
+    assert.equal(existsSync(join(root, 'pwned')), false, 'no argument ran a shell command');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("login-hint: an apostrophe local part passes the argument check", async () => {
+  const stub = await asStub();
+  try {
+    const { env } = await loginEnv(stub);
+    const { authUrl, result } = await runLogin(env, ["o'brien@company.com"]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(authUrl.searchParams.get('login_hint'), "o'brien@company.com");
+  } finally {
+    await stub.close();
+  }
 });
 
 test('login-hint: a valid email is sent as login_hint exactly', async () => {

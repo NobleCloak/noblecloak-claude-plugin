@@ -329,8 +329,8 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
 /**
  * The optional email argument, or null when absent. Exits 2 on anything else.
- * The command template quotes $ARGUMENTS, so no argument arrives as one blank
- * string; that counts as absent.
+ * The command template passes $ARGUMENTS through a quoted heredoc, so no
+ * argument arrives as one blank string; that counts as absent.
  */
 function parseLoginHint(args) {
   if (args.length === 0 || (args.length === 1 && args[0].trim() === '')) return null;
