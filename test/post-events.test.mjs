@@ -38,7 +38,7 @@ import {
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 // The deployment's wire values, pinned literally (see the CE_* constants in governance.mjs).
-const CE_SOURCE = 'bianoble/local-execution/claude-code';
+const CE_SOURCE = 'noblecloak/local-execution/claude-code';
 const TOOL_CALL_TYPES = [CE_TYPE_TOOL_CALL_AUTHORIZED, CE_TYPE_TOOL_CALL_DENIED];
 
 /** A Pre-side audit record (brief #4 shape) for a Bash call that resolved allow. */
@@ -86,7 +86,7 @@ test('PostToolUse success: authorized post event emitted with outcome.ok=true', 
   const post = events.find((e) => e.body.id === 'toolu_0123456789:post');
   assert.ok(post, 'a :post event is emitted');
   assert.equal(post.body.specversion, '1.0');
-  assert.equal(post.body.type, 'com.bianoble.tool.call.authorized.v1');
+  assert.equal(post.body.type, 'com.noblecloak.tool.call.authorized.v1');
   assert.equal(post.body.source, CE_SOURCE);
   assert.equal(post.body.subject, SESSION_ID); // run_id = session_id
   assert.equal(post.body.data.outcome.ok, true);
@@ -119,7 +119,7 @@ test('PostToolUse success: pre-phase event also emitted with decision from the a
 
   const pre = events.find((e) => e.body.id === 'toolu_0123456789:pre');
   assert.ok(pre, 'a :pre event is emitted alongside the :post event');
-  assert.equal(pre.body.type, 'com.bianoble.tool.call.authorized.v1');
+  assert.equal(pre.body.type, 'com.noblecloak.tool.call.authorized.v1');
   assert.equal(pre.body.data.decision.mode, 'always_allow');
   // Policy-mode vocab on the wire: the permissionDecision 'allow' normalizes to
   // 'always_allow' so COO's ingest enum accepts it.
@@ -159,7 +159,7 @@ test('PostToolUseFailure: pre-phase event emitted independently (fabricated-succ
 
   const pre = events.find((e) => e.body.id === 'toolu_0123456789:pre');
   assert.ok(pre, 'pre event fires even on the failure path');
-  assert.equal(pre.body.type, 'com.bianoble.tool.call.denied.v1');
+  assert.equal(pre.body.type, 'com.noblecloak.tool.call.denied.v1');
   assert.equal(pre.body.data.outcome, undefined);
 });
 
@@ -173,7 +173,7 @@ test('SubagentStart: subagent.started event with agent_id, agent_type, cwd', asy
   await stub.close();
 
   const [evt] = events;
-  assert.equal(evt.body.type, 'com.bianoble.local.subagent.started.v1');
+  assert.equal(evt.body.type, 'com.noblecloak.local.subagent.started.v1');
   assert.equal(evt.body.id, 'agent_abc123:started');
   assert.equal(evt.body.subject, SESSION_ID);
   assert.equal(evt.body.data.agent_id, 'agent_abc123');
@@ -189,7 +189,7 @@ test('SubagentStop: subagent.stopped event with agent_transcript_path', async ()
   await stub.close();
 
   const [evt] = events;
-  assert.equal(evt.body.type, 'com.bianoble.local.subagent.stopped.v1');
+  assert.equal(evt.body.type, 'com.noblecloak.local.subagent.stopped.v1');
   assert.equal(evt.body.id, 'agent_abc123:stopped');
   assert.equal(evt.body.data.agent_id, 'agent_abc123');
   assert.equal(evt.body.data.agent_transcript_path, '/tmp/agent-transcript.jsonl');
@@ -500,7 +500,7 @@ test('enforce-mode denied call with NO Post ships its :pre via SubagentStop drai
   await stub.close();
   const pre = events.find((e) => e.body.id === 'toolu_denied:pre');
   assert.ok(pre, 'the denied call\'s :pre reaches the stub even with no Post');
-  assert.equal(pre.body.type, 'com.bianoble.tool.call.denied.v1');
+  assert.equal(pre.body.type, 'com.noblecloak.tool.call.denied.v1');
   assert.equal(pre.body.subject, SESSION_ID);
   assert.equal(pre.body.data.outcome, undefined);
 });
