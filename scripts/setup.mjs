@@ -34,7 +34,7 @@
  * `service-principal` creates the agent's own service principal with `npx @noblecloak/cli sp create` (pinned in
  * lib/service-principal.mjs), taking the organization from the signed-in session and the deployment values from the
  * plugin's configuration (NOBLECLOAK_ADMIN_AUDIENCE overrides the admin audience). Exit codes: 0 created, 2 input
- * refused, 3 the plugin is not signed in, 4 not an administrator, 5 the CLI's own administrator sign-in did not complete, 1 anything else.
+ * refused, 3 the plugin is not signed in, 4 not an administrator, 5 the CLI's own administrator sign-in did not complete (failed, timed out or cancelled), 1 anything else. Exit 1 includes an interrupted create (the principal may exist; the message prints the full `npx … sp list` command), a 401 from the admin API (check NOBLECLOAK_ADMIN_AUDIENCE) and a principal created without a saved credential (the message prints the full `npx … sp revoke … --yes` command).
  *
  * Env: NOBLECLOAK_SETUP_SKILLS_DIR names the skills directory (default: this plugin's `setup-skills/`); a test seam.
  */

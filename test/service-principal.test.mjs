@@ -11,7 +11,9 @@ import {
   buildCliArgs,
   CLI_VERSION,
   insideGitWorkTree,
+  listCommand,
   mapCliFailure,
+  revokeCommand,
   parseCliJson,
   resolveServicePrincipalInputs,
   runServicePrincipal,
@@ -262,9 +264,8 @@ test('other 404s and "not found" text are not reported as a routing problem', ()
   }
   // the routing line only counts at exit 1
   assert.doesNotMatch(mapCliFailure({ status: 3, stderr: ROUTING_404 }).message, routing);
-  // exit 3 (CLI sign-in, reported as 5) / 4 keep their own code and message when stderr says "not found"
+  // exit 4 keeps its own code and message when stderr says "not found"
   const notFound = 'error: administrator not found\n';
-  assert.equal(mapCliFailure({ status: 3, stderr: notFound }).exit, 5);
   assert.equal(mapCliFailure({ status: 4, stderr: notFound }).exit, 4);
   assert.match(mapCliFailure({ status: 4, stderr: notFound }).message, /not an administrator/);
   // a post-create network failure whose hint mentions a 404 in a name or path
@@ -274,9 +275,7 @@ test('other 404s and "not found" text are not reported as a routing problem', ()
 });
 
 test('other CLI failures map by exit code; success with no sp_id is a failure', async () => {
-  // exit 3 from the CLI is its own administrator sign-in failing; the plugin's own "not signed in" keeps 3
-  assert.equal(mapCliFailure({ status: 3, stderr: '' }).exit, 5);
-  assert.match(mapCliFailure({ status: 3, stderr: '' }).message, /administrator/);
+  // exit 3 from the CLI is split by its stderr line (below); the plugin's own "not signed in" keeps 3
   assert.equal(mapCliFailure({ status: 4, stderr: '' }).exit, 4);
   assert.match(mapCliFailure({ status: 4, stderr: '' }).message, /not an administrator/);
   assert.equal(mapCliFailure({ status: 2, stderr: '' }).exit, 2);
@@ -287,6 +286,56 @@ test('other CLI failures map by exit code; success with no sp_id is a failure', 
   const spawnFail = await runWith({ status: null, error: new Error('ENOENT') });
   assert.equal(spawnFail.code, 1);
   assert.match(spawnFail.logs.join('\n'), /Could not run npx: ENOENT/);
+});
+
+const CTX = { orgId: ORG, authUrl: AUTH, adminAudience: 'https://admin-api.noblecloak.com' };
+const LIST = `npx -y @noblecloak/cli@0.1.2 sp list --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com`;
+
+test('CLI exit 3 is split by its stderr line: sign-in not completed is 5; interrupted and a 401 are not "run it again"', () => {
+  for (const line of ['Sign-in was not completed.', 'Sign-in timed out waiting for the browser.', 'Sign-in was cancelled.', 'Sign-in failed: the token endpoint answered 400.']) {
+    const f = mapCliFailure({ status: 3, stderr: `error: ${line}\n` }, CTX);
+    assert.equal(f.exit, 5, line);
+    assert.match(f.message, /did not complete/);
+  }
+  const maybe = 'error: Interrupted. The server may or may not have applied the request: run noblecloak sp list to check. If a new "n" is listed, it was created and has no credential file (/o was not written): revoke it with\n  noblecloak sp revoke --org x --sp <its id>\n';
+  const interrupted = mapCliFailure({ status: 3, stderr: maybe }, CTX);
+  assert.equal(interrupted.exit, 1);
+  assert.match(interrupted.message, /interrupted; the principal may have been created\. Check with:\n  npx -y @noblecloak\/cli@0\.1\.2 sp list /);
+  assert.ok(interrupted.message.includes(LIST));
+  assert.doesNotMatch(interrupted.message, /again/i);
+  const refused = mapCliFailure({ status: 3, stderr: 'error: Not signed in: the server answered 401 (TOKEN_INVALID).\n' }, CTX);
+  assert.equal(refused.exit, 1);
+  assert.match(refused.message, /refused the administrator's token \(check NOBLECLOAK_ADMIN_AUDIENCE\)/);
+  assert.doesNotMatch(refused.message, /again/i);
+  // an unrecognised exit 3 is neither "sign-in did not complete" nor "run it again"
+  const unknown = mapCliFailure({ status: 3, stderr: 'error: something else\n' }, CTX);
+  assert.equal(unknown.exit, 1);
+  // a sign-in line that is not at the start of an `error:` line is not a CLI sign-in failure
+  assert.equal(mapCliFailure({ status: 3, stderr: 'note: Sign-in was cancelled.\n' }, CTX).exit, 1);
+});
+
+test('recovery commands carry --auth-url, --admin-audience, the npx prefix, and --yes for revoke', () => {
+  assert.equal(listCommand(CTX), LIST);
+  assert.equal(revokeCommand(CTX, 'sp-1'), `npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=sp-1 --yes`);
+  assert.match(listCommand({ ...CTX, authUrl: "https://a.test/it's" }), /--auth-url='https:\/\/a\.test\/it'\\''s'/);
+});
+
+test('a created-but-unsaved principal prints a revoke command that runs as printed', async () => {
+  const stderr = `error: could not write /o/c.json (EACCES). The service principal sp-orphan-7 was created and has no credential file: revoke it with\n  noblecloak sp revoke --org ${ORG} --sp sp-orphan-7\n`;
+  const { code, logs } = await runWith({ status: 1, stdout: '', stderr });
+  assert.equal(code, 1);
+  const text = logs.join('\n');
+  assert.ok(text.includes(`npx -y @noblecloak/cli@0.1.2 sp revoke --org=${ORG} --auth-url=${AUTH} --admin-audience=https://admin-api.noblecloak.com --sp=sp-orphan-7 --yes`), text);
+  assert.doesNotMatch(text, /^\s*noblecloak sp/m);
+});
+
+test('a create that may or may not have applied prints the full list command; success without an sp_id does too', async () => {
+  const stderr = 'error: The request to https://auth.noblecloak.com timed out before an answer arrived. The server may or may not have applied the request: run noblecloak sp list to check.\n';
+  const a = await runWith({ status: 1, stdout: '', stderr });
+  assert.equal(a.code, 1);
+  assert.ok(a.logs.join('\n').includes(LIST));
+  const b = await runWith({ status: 0, stdout: '{"path":"/p"}' });
+  assert.ok(b.logs.join('\n').includes(LIST));
 });
 
 test('a refused input never spawns the CLI', async () => {

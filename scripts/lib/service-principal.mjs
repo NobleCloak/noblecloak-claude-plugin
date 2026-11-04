@@ -221,22 +221,63 @@ export function parseCliJson(stdout) {
   }
 }
 
-/** A clear message and exit code for a failed CLI run. */
-export function mapCliFailure({ status, stderr = '' }, authUrl = '') {
+const shellWord = (v) => (/^[\w@%+=:,./-]+$/.test(v) ? v : `'${v.replace(/'/g, "'\\''")}'`);
+
+/** A command that runs as printed: `npx` (the CLI is not on PATH), the pinned version, and the deployment values as flags. */
+function cliCommand({ orgId = '<org id>', authUrl = '<authorization server>', adminAudience = '<admin audience>' }, sub) {
+  return ['npx', '-y', `${CLI_PACKAGE}@${CLI_VERSION}`, 'sp', ...sub, `--org=${shellWord(orgId)}`].join(' ') + ` --auth-url=${shellWord(authUrl)} --admin-audience=${shellWord(adminAudience)}`;
+}
+
+/** The command that lists the organization's service principals. */
+export function listCommand(ctx) {
+  return cliCommand(ctx, ['list']);
+}
+
+/** The command that revokes one principal; `--yes` because there is no terminal to confirm on. */
+export function revokeCommand(ctx, spId) {
+  return `${cliCommand(ctx, ['revoke'])} --sp=${shellWord(spId)} --yes`;
+}
+
+/**
+ * A clear message and exit code for a failed CLI run. `ctx` is { orgId, authUrl, adminAudience }: the recovery commands in
+ * the messages are built from it. The text matched is what @noblecloak/cli 0.1.2 prints on stderr as `error: <message>`.
+ */
+export function mapCliFailure({ status, stderr = '' }, ctx = {}) {
   // The CLI's line for a 404 with no error body (api.ts: `The server answered ${status} ${code}: ${message}`). A JSON 404
   // (`404 NOT_FOUND: ...`), an npm registry 404 and any text that merely contains "404" or "not found" do not match.
   if (status === 1 && /^error: The server answered 404 UNKNOWN: no message$/m.test(stderr)) {
     return {
       exit: 1,
       message:
-        `The deployment answered 404 for the service-principal routes on ${authUrl || 'the authorization server'}; the principal was not created. Ask the deployment's operator to serve them on the authorization server's origin.`,
+        `The deployment answered 404 for the service-principal routes on ${ctx.authUrl || 'the authorization server'}; the principal was not created. Ask the deployment's operator to serve them on the authorization server's origin.`,
     };
+  }
+  if (status === 1) {
+    // Created on the server, credential not saved (commands.ts orphaned()).
+    const orphan = /The service principal (\S+) was created and has no credential file/.exec(stderr);
+    if (orphan) {
+      return { exit: 1, message: `The principal ${orphan[1]} was created but its credential file was not saved. Revoke it with:\n  ${revokeCommand(ctx, orphan[1])}` };
+    }
+    // A create that failed after the request left (api.ts MAYBE_APPLIED).
+    if (/The server may or may not have applied the request/.test(stderr)) {
+      return { exit: 1, message: `The create request failed before an answer arrived; the principal may have been created. Check with:\n  ${listCommand(ctx)}` };
+    }
   }
   switch (status) {
     case 2:
       return { exit: 2, message: 'The CLI refused the input (see its message above). Nothing was created.' };
     case 3:
-      return { exit: 5, message: 'Sign-in for the administrator did not complete (failed, timed out or cancelled). Run it again.' };
+      // The CLI uses exit 3 for several things; tell them apart by its stderr line.
+      if (/^error: Interrupted\./m.test(stderr)) {
+        return { exit: 1, message: `The request was interrupted; the principal may have been created. Check with:\n  ${listCommand(ctx)}` };
+      }
+      if (/^error: Not signed in: the server answered 401/m.test(stderr)) {
+        return { exit: 1, message: "The admin API refused the administrator's token (check NOBLECLOAK_ADMIN_AUDIENCE). Nothing was created." };
+      }
+      if (/^error: Sign-in /m.test(stderr)) {
+        return { exit: 5, message: 'Sign-in for the administrator did not complete (failed, timed out or cancelled). Run it again.' };
+      }
+      return { exit: 1, message: 'The CLI exited 3 (not signed in) without saying why; see its message above.' };
     case 4:
       return { exit: 4, message: 'You are not an administrator of that organization. Ask an administrator to run this.' };
     default:
@@ -279,14 +320,14 @@ export async function runServicePrincipal({
     return 1;
   }
   if (result.status !== 0) {
-    const failure = mapCliFailure(result, inputs.authUrl);
+    const failure = mapCliFailure(result, inputs);
     log(failure.message);
     return failure.exit;
   }
   const created = parseCliJson(result.stdout);
   const spId = typeof created?.sp_id === 'string' ? created.sp_id : '';
   if (!spId) {
-    log('The CLI reported success but printed no sp_id. Run `npx -y @noblecloak/cli@' + CLI_VERSION + ' sp list --org ' + inputs.orgId + '` to find the principal.');
+    log(`The CLI reported success but printed no sp_id. Find the principal with:\n  ${listCommand(inputs)}`);
     return 1;
   }
   const path = typeof created.path === 'string' && created.path ? created.path : inputs.out;
