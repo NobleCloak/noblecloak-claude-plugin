@@ -1,0 +1,30 @@
+/**
+ * The README and the governance-hook doc describe the sign-in organization
+ * choice (made on the consent page) and no longer mention connection registration.
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { REPO_ROOT } from './helpers.mjs';
+
+const DOCS = ['README.md', 'docs/governance-hook.md'];
+
+for (const file of DOCS) {
+  const text = readFileSync(join(REPO_ROOT, file), 'utf-8');
+
+  test(`${file}: no connection-registration text and no "no org picker"`, () => {
+    assert.doesNotMatch(text, /connection registration/i);
+    assert.doesNotMatch(text, /\/mcp\/connections/);
+    assert.doesNotMatch(text, /NOBLECLOAK_API_URL/);
+    assert.doesNotMatch(text, /no org picker/i);
+  });
+
+  test(`${file}: says the org was chosen on the consent page and the MCP connection needs a reconnect`, () => {
+    assert.match(text, /chosen on the consent page/);
+    assert.match(text, /Make this my default organization/);
+    assert.match(text, /holds its own token, so reconnect it from `\/mcp`/);
+  });
+}

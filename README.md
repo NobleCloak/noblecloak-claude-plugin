@@ -121,6 +121,11 @@ they are issued at different moments, so they can disagree. This is why
 `/noblecloak-status` labels its org line "hooks token" and why fixing a
 wrong-org problem needs `/noblecloak-login` **and** an `/mcp` reconnect.
 
+The organization shown after sign-in was chosen on the consent page. To use a different one,
+re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
+it). The MCP server connection holds its own token, so reconnect it from `/mcp` after changing
+organizations.
+
 ## When governance goes quiet
 
 `/noblecloak-status` is the place to look. It shows whether the hooks are signed in, when

@@ -55,13 +55,9 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            endpoint is {base}/v1/coo/local/resolve. Default:
 //                            the same production API host, where the COO API
 //                            is served under /v1/coo.
-//   NOBLECLOAK_API_URL         Base for login's connection registration
-//                            (POST {base}/mcp/connections). Default: the
-//                            issuer above (NOBLECLOAK_ISSUER or its default).
 //   The hooks and scripts use another deployment (a non-production one
 //   included) when these two, NOBLECLOAK_GOVERN_URL and NOBLECLOAK_MCP_FILE are
-//   set (NOBLECLOAK_API_URL follows NOBLECLOAK_ISSUER unless set); Claude Code's
-//   own MCP connection reads the committed .mcp.json.
+//   set; Claude Code's own MCP connection reads the committed .mcp.json.
 //   NOBLECLOAK_LOCAL_ENFORCE   'true'/'1' flips the PreToolUse adapter from
 //                            audit-only (default) to enforce mode.
 //   NOBLECLOAK_DEV_TOKEN       DEV-ONLY bearer-token override while Core OAuth AS

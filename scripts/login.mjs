@@ -40,9 +40,6 @@ import {
 // from {NOBLECLOAK_ISSUER}/.well-known/oauth-authorization-server (Core is the
 // OAuth 2.1 AS under the API host; the discovery document names its endpoints).
 
-// The connection registration (POST /mcp/connections) carries the access token,
-// so it goes to the deployment that issued it: the configured issuer.
-const API_BASE_URL = process.env.NOBLECLOAK_API_URL || issuerBaseUrl();
 // The OAuth client_id is resolved at login time via ensureRegisteredClientId
 // (DCR-registered + persisted, or NOBLECLOAK_CLIENT_ID override) — not a constant.
 const REDIRECT_PORT = Number(process.env.NOBLECLOAK_REDIRECT_PORT) || 19284;
@@ -115,37 +112,6 @@ async function exchangeCodeForTokens(tokenEndpoint, code, codeVerifier, oauthCli
   }
 
   return response.json();
-}
-
-// ── Register Connection ─────────────────────────────────────────────────
-
-async function registerConnection(accessToken, organizationId) {
-  // Best-effort by design (connection tracking is advisory), but NEVER silent:
-  // a swallowed registration failure is one more piece of
-  // invisible state in the org-binding diagnosis chain.
-  try {
-    const res = await fetch(`${API_BASE_URL}/mcp/connections`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        clientToolId: 'claude-code',
-        organizationId,
-      }),
-    });
-    if (!res.ok) {
-      const detail = (await res.text().catch(() => '')).slice(0, 200);
-      console.error(
-        `NobleCloak: connection registration failed (${res.status}) — non-fatal, continuing. ${detail}`
-      );
-    }
-  } catch (err) {
-    console.error(
-      `NobleCloak: connection registration failed (${err.message}) — non-fatal, continuing.`
-    );
-  }
 }
 
 // ── Main Login Flow ─────────────────────────────────────────────────────
@@ -247,15 +213,12 @@ async function login(loginHint) {
         // the hooks resume COO calls on the next tool call.
         clearSignedOut();
 
-        // Register connection (best-effort, never silent — see registerConnection)
-        if (orgId) {
-          await registerConnection(authState.accessToken, orgId);
-        }
-
         const orgLine = orgId
           ? `<p>Organization: <code>${orgId}</code><br>
              <small>All NobleCloak tool calls resolve against this workspace's catalog.
-             If you meant a different workspace, change your default org and re-run /noblecloak-login.</small></p>`
+             This organization was chosen on the consent page. To use a different one, re-run /noblecloak-login and
+             pick it there (tick "Make this my default organization" to keep it). The MCP server connection holds
+             its own token, so reconnect it from /mcp after changing organizations.</small></p>`
           : `<p><strong>Warning:</strong> the session token carries no organization binding —
              tool calls may fail with "not found in catalog". Run /noblecloak-status in Claude Code
              for diagnosis.</p>`;
@@ -358,10 +321,10 @@ try {
     console.log(`Signed in as: ${authState.sub ?? 'unknown'}`);
     console.log(`Organization: ${authState.orgId}`);
     console.log(
-      'All NobleCloak tool calls resolve against this workspace’s catalog. The AS picks your ' +
-        'default org automatically (no org picker yet) — if this is the wrong workspace, change ' +
-        'your default org in the NobleCloak shell, then re-run /noblecloak-login AND reconnect the MCP ' +
-        'server from /mcp (it holds its own token).'
+      'All NobleCloak tool calls resolve against this workspace’s catalog. This organization was ' +
+        'chosen on the consent page. To use a different one, re-run /noblecloak-login and pick it ' +
+        'there (tick "Make this my default organization" to keep it). The MCP server connection ' +
+        'holds its own token, so reconnect it from /mcp after changing organizations.'
     );
   } else {
     console.log(

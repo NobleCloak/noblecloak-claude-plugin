@@ -16,7 +16,6 @@ import { makeStateDir, runScript, startStub, REFRESH_PATH, REPO_ROOT } from './h
 
 function refreshEnv(stub, dir, extra = {}) {
   return {
-    NOBLECLOAK_API_URL: stub.url,
     NOBLECLOAK_ISSUER: stub.url,
     NOBLECLOAK_STATE_DIR: dir,
     NOBLECLOAK_MCP_FILE: join(dir, 'mcp.json'),

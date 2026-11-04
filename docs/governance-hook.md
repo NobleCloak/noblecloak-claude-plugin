@@ -93,7 +93,6 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | `NOBLECLOAK_LOCAL_ENFORCE` | `false` (audit-only) | Flip to `true` to enforce server decisions |
 | `NOBLECLOAK_COO_URL` | `https://api.noblecloak.com` | COO API base; resolve endpoint is `{base}/v1/coo/local/resolve` |
 | `NOBLECLOAK_ISSUER` | `https://api.noblecloak.com` | OAuth issuer; endpoints discovered via `{issuer}/.well-known/oauth-authorization-server` |
-| `NOBLECLOAK_API_URL` | the issuer (`NOBLECLOAK_ISSUER` or its default) | Base for `/noblecloak-login`'s connection registration, `POST {base}/mcp/connections` |
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
 | `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
@@ -228,6 +227,11 @@ the native token; `/noblecloak-status` therefore labels its org line "hooks toke
 authoritative session-org echo is a gateway-side ask. When the bindings are suspected
 to differ, re-run `/noblecloak-login` AND reconnect the MCP server from `/mcp` so both re-mint
 against the current default org.
+
+The organization shown after sign-in was chosen on the consent page. To use a different one,
+re-run `/noblecloak-login` and pick it there (tick "Make this my default organization" to keep
+it). The MCP server connection holds its own token, so reconnect it from `/mcp` after changing
+organizations.
 
 Login persists the hooks token's `orgId`/`sub` into `auth.json`, and `/noblecloak-status` probes
 the gateway catalog (`Catalog: N tools visible`) — N=0 is the "every dispatch will 404"

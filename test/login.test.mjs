@@ -74,8 +74,11 @@ async function runLogin(env, args = []) {
     });
     child.on('close', () => reject(new Error(`exited before printing the URL: ${stdout}${stderr}`)));
   });
-  await fetch(`http://127.0.0.1:${env.NOBLECLOAK_REDIRECT_PORT}/callback?code=abc&state=${authUrl.searchParams.get('state')}`);
-  return { authUrl, result: await done };
+  const callback = await fetch(
+    `http://127.0.0.1:${env.NOBLECLOAK_REDIRECT_PORT}/callback?code=abc&state=${authUrl.searchParams.get('state')}`
+  );
+  const html = await callback.text();
+  return { authUrl, html, result: await done };
 }
 
 test('login prints the first-sign-in note before it opens the browser', async () => {
@@ -113,17 +116,24 @@ test('adv-1: a client.json registered at another authorization server is replace
   }
 });
 
-test('adv-2: with only NOBLECLOAK_ISSUER set, the connection registration goes to that issuer, not the default host', async () => {
+test('adv-2: a successful login makes no connection-registration request, and the output names the consent-page org choice', async () => {
   const stub = await asStub();
   const { env } = await loginEnv(stub);
-  assert.equal(env.NOBLECLOAK_API_URL, undefined, 'precondition: no API URL override');
   try {
-    const { result } = await runLogin(env);
+    const { result, html } = await runLogin(env);
     assert.equal(result.code, 0, result.stderr);
-    const regs = stub.requests.filter((r) => r.method === 'POST' && r.path === '/mcp/connections');
-    assert.equal(regs.length, 1, `registration reached the configured issuer: ${result.stderr}`);
-    assert.equal(regs[0].headers.authorization, `Bearer ${stub.tokenResponse.access_token}`);
-    assert.doesNotMatch(result.stderr, /api\.noblecloak\.com/);
+    const regs = stub.requests.filter((r) => r.path === '/mcp/connections');
+    assert.equal(regs.length, 0, 'the plugin never POSTs /mcp/connections');
+    assert.ok(stub.requests.some((r) => r.path === '/auth/oauth/token'), 'precondition: the login reached the token endpoint');
+    for (const text of [result.stdout, html]) {
+      assert.match(text, /chosen on the consent page/);
+      assert.match(text, /Make this my default organization/);
+      assert.match(text, /reconnect it from \/mcp/);
+    }
+    for (const text of [result.stdout, result.stderr, html]) {
+      assert.doesNotMatch(text, /connection registration/i);
+      assert.doesNotMatch(text, /no org picker/i);
+    }
   } finally {
     await stub.close();
   }
