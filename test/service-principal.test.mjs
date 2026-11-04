@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -92,6 +92,26 @@ test('refuses an --out inside a git work tree, including a not-yet-created subdi
   const home = mkTmp('sp-home-');
   mkdirSync(join(home, '.git'));
   await assert.rejects(resolveServicePrincipalInputs(inputsOf({ home })), /inside a git work tree/);
+});
+
+test('a custom --out needs an existing parent directory (the CLI does not create one); the default directory is created with mode 0700', async () => {
+  const base = mkTmp('sp-out-');
+  const missing = join(base, 'no', 'such', 'cred.json');
+  const notDir = join(base, 'file');
+  writeFileSync(notDir, 'x');
+  for (const out of [missing, join(notDir, 'cred.json')]) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ flags: { out } })), (e) => e.exit === 2 && /parent directory/.test(e.message), out);
+  }
+  // end to end: refused before the CLI is spawned, so no principal is created
+  const refused = await runWith({ status: 0, stdout: cliJson() }, { out: missing });
+  assert.equal(refused.code, 2);
+  assert.equal(refused.calls.length, 0);
+  assert.equal((await resolveServicePrincipalInputs(inputsOf({ flags: { out: join(base, 'ok.json') } }))).out, join(base, 'ok.json'));
+  // default path: the directory is created, owner-only
+  const home = mkTmp('sp-home-');
+  const code = await runServicePrincipal({ env: session(), cwd: mkTmp('sp-proj-'), home, discover, run: async () => ({ status: 0, stdout: cliJson() }), log: () => {}, print: () => {} });
+  assert.equal(code, 0);
+  assert.equal(statSync(join(home, '.noblecloak', ORG)).mode & 0o777, 0o700);
 });
 
 test('refuses an existing --out path (file or dangling symlink)', async () => {

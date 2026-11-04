@@ -7,7 +7,7 @@
  * fields of the CLI's `--json` result it names (`sp_id`, `path`).
  */
 import { spawn } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -120,6 +120,12 @@ export async function resolveServicePrincipalInputs({
     throw new ServicePrincipalError(`${out} is inside a git work tree, where the credential could be committed. Pass an --out outside any repository.`, 2);
   }
 
+  // The CLI writes the credential after the server create and does not create directories, so a missing parent would leave an
+  // orphaned principal. The default directory is created by runServicePrincipal.
+  if (flags.out && !isDirectory(dirname(out))) {
+    throw new ServicePrincipalError(`The parent directory of ${out} does not exist or is not a directory; create it first (nothing was created).`, 2);
+  }
+
   const governAudience = governResourceIndicator(env);
   if (!governAudience) throw new ServicePrincipalError('Cannot determine the govern API origin: set NOBLECLOAK_GOVERN_URL.', 1);
 
@@ -132,6 +138,14 @@ export async function resolveServicePrincipalInputs({
   if (!authUrl) throw new ServicePrincipalError("The authorization server's metadata has no issuer.", 1);
 
   return { orgId, name, expiresInDays, out, authUrl, governAudience, adminAudience: adminAudience(authUrl, env), defaultOut: !flags.out };
+}
+
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 // lstat so a dangling symlink at the path counts as existing.
