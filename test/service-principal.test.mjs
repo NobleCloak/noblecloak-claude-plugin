@@ -74,6 +74,12 @@ test('refuses when not signed in (exit 3) or the session has no org id', async (
   await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: { sub: 'u1' } }) })), /no organization id/);
 });
 
+test('refuses a session org id that is not a UUID before it reaches a path', async () => {
+  for (const org of ['../../etc', 'a/b', 'not-a-uuid']) {
+    await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: { sub: 'u1', org_id: org } }) })), (e) => e.exit === 1 && /not a valid organization id/.test(e.message), org);
+  }
+});
+
 test('session claims: an organizations entry with a non-admin role refuses (exit 4); admin or absent proceeds', async () => {
   const orgs = (role) => ({ sub: 'u', org_id: ORG, organizations: [{ id: ORG, role }] });
   await assert.rejects(resolveServicePrincipalInputs(inputsOf({ env: session({ claims: orgs('member') }) })), (e) => e.exit === 4 && /not an administrator/.test(e.message));

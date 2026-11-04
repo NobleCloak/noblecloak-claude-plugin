@@ -27,6 +27,7 @@ export class ServicePrincipalError extends Error {
   }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const trim = (v) => String(v ?? '').trim();
 const stripSlash = (s) => s.replace(/\/+$/, '');
 
@@ -98,6 +99,9 @@ export async function resolveServicePrincipalInputs({
   const orgId = tokenIdentity(auth)?.orgId;
   if (!orgId) {
     throw new ServicePrincipalError('The signed-in session carries no organization id. Run /noblecloak-login again, choosing the organization you administer.', 1);
+  }
+  if (!UUID.test(orgId)) {
+    throw new ServicePrincipalError('The signed-in session carries an organization id that is not a valid organization id (a UUID). Run /noblecloak-login again.', 1);
   }
   if (adminClaimVerdict(auth, orgId) === 'not-admin') {
     throw new ServicePrincipalError(`Your session says you are not an administrator of organization ${orgId}. Only an administrator can create a service principal; ask one to run this.`, 4);
