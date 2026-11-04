@@ -29,14 +29,28 @@ Two scripts do the mechanical parts; the rest is judgement that you make, with t
 - The project is a TypeScript or JavaScript project with `@langchain/langgraph` or `langchain` in its
   `package.json`, and an agent built with `createAgent` or a hand-built `StateGraph`. Stop and say so if it is
   not; the skill does not cover other runtimes.
-- **The agent needs its own service principal, created by an administrator of the organisation first.** Ask the
-  user for two things: the path of the service principal's credential file, and the service principal's id
-  (the `id` that the deployment's principal list shows for it; do not guess it from the credential's
-  `client_id`). If the user has only a user token (`NC_TOKEN` or a pasted access token), **stop**, and explain
-  why: the policies for an agent apply through the service principal bound to it, so an agent that runs on a
-  person's token is governed as that person, and a service principal never approves what it asks for. Ask them to
-  have an administrator create the service principal, then start again. Do not offer to run the agent on a user
-  token, and never write `NC_TOKEN` anywhere.
+- **The agent needs its own service principal.** Ask the user for two things: the path of the service
+  principal's credential file, and the service principal's id (the `id` that the deployment's principal list
+  shows, or the id the create command prints; do not guess it from the credential's `client_id`). If the user has
+  no service principal yet, offer to create one; the person who creates it must be an administrator of the
+  organisation. Running through the Claude Code plugin's `/noblecloak-setup`, offer
+  `node scripts/setup.mjs service-principal [--name <name>] [--out <path>]`: it opens a sign-in for the
+  administrator, creates the service principal, writes the credential outside the repository (mode 0600), and
+  prints the id, the credential path and the `NOBLECLOAK_SP_CREDENTIALS`, `NC_EXPECTED_PRINCIPAL` and
+  `NC_BASE_URL` lines. Otherwise give them the command to run:
+
+  ```sh
+  npx @noblecloak/cli sp create --org <org uuid> --name "<agent name>" \
+    --audience <the module API origin> --out <path outside the repository>
+  ```
+
+  It also needs `NOBLECLOAK_AUTH_URL` and `NOBLECLOAK_ADMIN_AUDIENCE` set to the values the deployment's operator
+  gives them. The credential file never goes into git. If the user has only a user token (`NC_TOKEN` or a pasted
+  access token) and will not create a service principal, **stop**, and explain why: the policies for an agent
+  apply through the service principal bound to it, so an agent that runs on a person's token is governed as that
+  person, and a service principal never approves what it asks for. Do not offer to run the agent on a user token,
+  and never write `NC_TOKEN` anywhere.
+
 - The person who runs the proposal is a user, not the service principal. They need their own user token in
   `NC_PROPOSER_TOKEN` (step 6), and the module API's origin in `NC_BASE_URL`. `NOBLECLOAK_APPROVALS_URL`, the
   address of the deployment's approvals module, is optional: when set, the script prints it next to the approval
@@ -173,6 +187,8 @@ Two scripts do the mechanical parts; the rest is judgement that you make, with t
          "role": "baseline",
          "tool": "ext:billing:issue_refund",
          "mode": "ask",
+         "name": "Issue a refund — a person approves",
+         "description": "Every refund waits for a person to approve it.",
          "rationale": "Issues a refund to a customer: money leaves the organisation and cannot be recalled, so a person approves each one.",
          "assessment": {
            "side_effect_level": "external",
@@ -189,7 +205,9 @@ Two scripts do the mechanical parts; the rest is judgement that you make, with t
    `tools` lists the `ext:` tools only (`transport` is `external` and `owner_kind` is `org`, filled in for you;
    `input_schema` is the tool's JSON Schema, `{ "type": "object" }` when you have none). A `policies` entry has a
    `role` (`baseline` or `tightening`), the one `tool` it governs, its `mode`, a `rationale` (1 to 500
-   characters) and the `assessment`. At most 50 tools and 50 policies; for more, propose in several plans.
+   characters) and the `assessment`. Give each policy a short plain `name` (1 to 200 characters), such as
+   "Issue a company card — a person approves": it is the label a reviewer sees, and without it the deployment
+   assigns an opaque id. A `description` (up to 2000 characters) is optional. At most 50 tools and 50 policies; for more, propose in several plans.
 
    Show the user the plan, then check it without sending anything:
 
