@@ -664,8 +664,8 @@ export function pluginVersion(pluginRoot = PLUGIN_ROOT) {
 //
 // The access token's org binding is the single fact that diagnoses the
 // "Tool 'X' not found in catalog" dead-end: ALL gateway tool calls
-// resolve against the bound org's catalog, and the AS picks that org invisibly
-// (default-org selection — no client-side choice today). Decode it, persist it
+// resolve against the bound org's catalog, and the org is chosen on the
+// consent page at login. Decode it, persist it
 // at login, display it in status.
 //
 // TWO-TOKEN SEAM (documented, not solved here): this plugin's auth.json token

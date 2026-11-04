@@ -28,3 +28,20 @@ for (const file of DOCS) {
     assert.match(text, /holds its own token, so reconnect it from `\/mcp`/);
   });
 }
+
+const SHIPPED_TEXT = [
+  'skills/noblecloak-help/SKILL.md',
+  'commands/noblecloak-status.md',
+  'agents/noblecloak-assistant.md',
+];
+
+for (const file of SHIPPED_TEXT) {
+  test(`${file}: does not claim the org is picked invisibly or that there is no org picker`, () => {
+    const text = readFileSync(join(REPO_ROOT, file), 'utf-8');
+    assert.doesNotMatch(text, /invisibly/i);
+    assert.doesNotMatch(text, /no org picker/i);
+    assert.doesNotMatch(text, /switch (your |the )?default org/i);
+    assert.doesNotMatch(text, /change (your |the )?default org/i);
+    assert.match(text, /consent page/);
+  });
+}

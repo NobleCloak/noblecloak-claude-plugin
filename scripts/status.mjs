@@ -5,8 +5,8 @@
  * Beyond token validity, this reports the two facts that diagnose the
  * "Tool 'X' not found in catalog" dead-end:
  *   1. WHO/WHERE — the org the governance-hooks token is bound to. Every
- *      gateway tool call resolves against the bound org's catalog, and the AS
- *      picks that org invisibly (default-org selection).
+ *      gateway tool call resolves against the bound org's catalog, and the
+ *      org is chosen on the consent page at login.
  *   2. Catalog health — one authenticated tools/list against the gateway:
  *      "Catalog: N tools visible". N=0 means every dispatch WILL fail; the
  *      remediation is printed inline.

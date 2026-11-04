@@ -37,9 +37,9 @@ Integration tools require the user to have connected the relevant service in the
 - If tools are not available, the user may need to run `/noblecloak-login` first.
 - **If a tool call fails with `Tool '<name>' not found in catalog`**: this is almost always an
   org-mismatch or a stale session snapshot, not a missing tool. Run `/noblecloak-status` and check
-  two lines: `Organization (hooks token)` (which workspace the session is bound to — the AS picks
-  the user's default org invisibly, so multi-org users can land in the wrong one) and
+  two lines: `Organization (hooks token)` (which workspace the session is bound to — the org is
+  chosen on the consent page at login, so multi-org users can land in the wrong one) and
   `Catalog: N tools visible` (N=0 means the bound org has no cataloged tools). Remediation: fix
-  the org (switch default org, `/noblecloak-login` again) or connect the needed MCP service in THAT
+  the org (re-run `/noblecloak-login` and pick the right org on the consent page) or connect the needed MCP service in THAT
   org, then reconnect the MCP server via `/mcp`.
 - Be conversational and helpful — many users are non-technical.
