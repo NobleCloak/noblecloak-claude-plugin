@@ -96,7 +96,7 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
 | `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
-| `NOBLECLOAK_SDK_HOOK_ACTIVE` | unset | Set by the future Agent SDK adapter; the plugin hook no-ops to avoid double-fire |
+| `NOBLECLOAK_SDK_HOOK_ACTIVE` | ignored | Ignored since 0.2.6: setting it no longer skips resolve, enforcement or audit. Versions up to 0.2.5 skipped the hooks when it was set. The plugin stays out of Agent SDK sessions only because the SDK adapter runs with `settingSources: []` by default; if a caller loads this plugin into an SDK session, both the plugin and the adapter gate and audit each call (events are keyed `<tool_use_id>:pre`/`:post`, and deduplication against the adapter's ids is not guaranteed). Other variables (`NOBLECLOAK_LOCAL_ENFORCE`, `NOBLECLOAK_COO_URL`, `NOBLECLOAK_ISSUER`) still change enforcement and where decisions and audit go |
 | `NOBLECLOAK_SIGNED_OUT_RECHECK_MS` | `900000` (15 min) | How often a signed-out plugin re-tries its refresh grant |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_RETENTION` | `2000` | Max unshipped Pre records kept in the audit queue (newest kept) |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_MAX_AGE_MS` | `604800000` (7 days) | Max age of a kept unshipped Pre record |

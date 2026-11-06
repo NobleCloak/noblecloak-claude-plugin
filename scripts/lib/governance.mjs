@@ -70,9 +70,8 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            Primarily for tests.
 //   NOBLECLOAK_MCP_FILE        Override for the .mcp.json path. Default:
 //                            $PLUGIN_ROOT/.mcp.json. Primarily for tests.
-//   NOBLECLOAK_SDK_HOOK_ACTIVE Dedup marker set by the future Agent SDK adapter
-//                            (epic brief #7) — when present the plugin hook
-//                            no-ops to avoid double-fire (spike Q3 finding).
+//   NOBLECLOAK_SDK_HOOK_ACTIVE Ignored since 0.2.6. Versions up to 0.2.5 skipped
+//                            the hooks when it was set (plugin-dev#1).
 
 export const DEFAULT_ISSUER = 'https://api.noblecloak.com';
 export const DEFAULT_COO_URL = 'https://api.noblecloak.com';

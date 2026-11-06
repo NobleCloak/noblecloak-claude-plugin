@@ -407,21 +407,34 @@ test('non-NobleCloak mcp__ tool emits the [:pre, :post] PAIR with no bn_corrobor
   assert.equal('bn_corroborated_by' in post.body.data, false);
 });
 
-// ── SDK dedup marker ────────────────────────────────────────────────────────
+// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (plugin-dev#1) ───────────────
 
-test('NOBLECLOAK_SDK_HOOK_ACTIVE: dispatcher exits 0 immediately, no event, no spill', async () => {
+test('NOBLECLOAK_SDK_HOOK_ACTIVE set: the :post event is still shipped (no seeded Pre, so a drain cannot stand in for it)', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
-  await seedAuditRecord(stateDir, preRecord());
   const result = await runPostEvents(
     postToolUseInput(),
     stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
   );
   assert.equal(result.code, 0);
-  await new Promise((r) => setTimeout(r, 200));
+  const events = await stub.waitForEvents(1);
   await stub.close();
-  assert.equal(stub.eventRequests().length, 0);
-  assert.equal(readSpillRecords(stateDir).length, 0);
+  const post = events.find((e) => e.body.id === 'toolu_0123456789:post');
+  assert.ok(post, 'the marker must not suppress the :post envelope');
+});
+
+test('NOBLECLOAK_SDK_HOOK_ACTIVE set: the :post and the seeded :pre both ship', async () => {
+  const stub = await startStub();
+  const stateDir = makeStateDir();
+  await seedAuditRecord(stateDir, preRecord());
+  await runPostEvents(
+    postToolUseInput(),
+    stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
+  );
+  const events = await stub.waitForEvents(2);
+  await stub.close();
+  assert.ok(events.find((e) => e.body.id === 'toolu_0123456789:pre'), ':pre ships');
+  assert.ok(events.find((e) => e.body.id === 'toolu_0123456789:post'), ':post ships');
 });
 
 // ── pre-without-post: the pre-for-B is not held back by a missing post-for-A ─
