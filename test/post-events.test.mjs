@@ -407,9 +407,9 @@ test('non-NobleCloak mcp__ tool emits the [:pre, :post] PAIR with no bn_corrobor
   assert.equal('bn_corroborated_by' in post.body.data, false);
 });
 
-// ── SDK dedup marker ────────────────────────────────────────────────────────
+// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (plugin-dev#1) ───────────────
 
-test('NOBLECLOAK_SDK_HOOK_ACTIVE: dispatcher exits 0 immediately, no event, no spill', async () => {
+test('NOBLECLOAK_SDK_HOOK_ACTIVE set: the post event is still shipped', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
   await seedAuditRecord(stateDir, preRecord());
@@ -418,10 +418,9 @@ test('NOBLECLOAK_SDK_HOOK_ACTIVE: dispatcher exits 0 immediately, no event, no s
     stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
   );
   assert.equal(result.code, 0);
-  await new Promise((r) => setTimeout(r, 200));
+  const events = await stub.waitForEvents(1);
   await stub.close();
-  assert.equal(stub.eventRequests().length, 0);
-  assert.equal(readSpillRecords(stateDir).length, 0);
+  assert.ok(events.length >= 1, 'the marker must not suppress event delivery');
 });
 
 // ── pre-without-post: the pre-for-B is not held back by a missing post-for-A ─

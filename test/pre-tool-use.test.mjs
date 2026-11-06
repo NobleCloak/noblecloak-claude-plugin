@@ -656,20 +656,36 @@ test('shape drift in audit-only: warns but allows, degraded audit record appende
   assert.equal(record.would_decision, 'deny'); // Bash → delete-level offline
 });
 
-// ── D6 SDK dedup stub ───────────────────────────────────────────────────────
+// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (plugin-dev#1) ───────────────
 
-test('NOBLECLOAK_SDK_HOOK_ACTIVE set → no-op allow, no resolve, no audit', async () => {
+test('NOBLECLOAK_SDK_HOOK_ACTIVE set + enforce: still resolves, still denies, still audits', async () => {
+  const stub = await startStub();
+  const stateDir = makeStateDir();
+  stub.resolveResponses = [resolveResponse('deny', { source: 'explicit_role', side_effect_level: 'delete' })];
+  const result = await runHook(
+    hookInput({ tool_name: 'Bash', tool_input: { command: 'rm -rf x' } }),
+    stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1', NOBLECLOAK_LOCAL_ENFORCE: 'true' })
+  );
+  await stub.close();
+  assert.equal(decisionOf(result), 'deny');
+  assert.equal(stub.resolveRequests().length, 1);
+  const records = readAuditRecords(stateDir);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].decision, 'deny');
+  assert.equal(records[0].enforce, true);
+});
+
+test('NOBLECLOAK_SDK_HOOK_ACTIVE set + audit-only: resolves and audits, never defers', async () => {
   const stub = await startStub();
   const stateDir = makeStateDir();
   const result = await runHook(
     hookInput({ tool_name: 'Bash', tool_input: { command: 'ls' } }),
-    stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1', NOBLECLOAK_LOCAL_ENFORCE: 'true' })
+    stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
   );
   await stub.close();
-  assert.equal(decisionOf(result), 'allow');
-  assert.match(result.output.hookSpecificOutput.permissionDecisionReason, /SDK/i);
-  assert.equal(stub.resolveRequests().length, 0);
-  assert.equal(readAuditRecords(stateDir).length, 0);
+  assert.doesNotMatch(result.output.hookSpecificOutput.permissionDecisionReason, /SDK/i);
+  assert.equal(stub.resolveRequests().length, 1);
+  assert.equal(readAuditRecords(stateDir).length, 1);
 });
 
 // ── per-call record contract (the brief #5 seam) ────────────────────────────
