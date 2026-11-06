@@ -149,9 +149,8 @@ function dispatchToWorker(envelopes, drain) {
 }
 
 async function main() {
-  // No environment variable suppresses event delivery. Versions up to 0.2.5
-  // returned here when NOBLECLOAK_SDK_HOOK_ACTIVE was set (plugin-dev#1); that
-  // variable is now ignored.
+  // NOBLECLOAK_SDK_HOOK_ACTIVE no longer suppresses event delivery. Versions up
+  // to 0.2.5 returned here when it was set (plugin-dev#1); it is now ignored.
   let input;
   try {
     input = JSON.parse(await readStdin());

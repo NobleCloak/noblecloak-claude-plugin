@@ -208,9 +208,10 @@ async function resolveWithAuth(body) {
 async function main(startedAt) {
   const enforce = isEnforceMode();
 
-  // No environment variable turns this hook off. Versions up to 0.2.5 skipped
-  // resolve and audit when NOBLECLOAK_SDK_HOOK_ACTIVE was set, which nothing
-  // could verify (plugin-dev#1); that variable is now ignored.
+  // NOBLECLOAK_SDK_HOOK_ACTIVE no longer skips this hook. Versions up to 0.2.5
+  // skipped resolve and audit when it was set, which nothing could verify
+  // (plugin-dev#1); it is now ignored. (Other variables, such as
+  // NOBLECLOAK_LOCAL_ENFORCE and NOBLECLOAK_COO_URL, still change behavior.)
   let input;
   try {
     input = JSON.parse(await readStdin());
