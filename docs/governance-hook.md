@@ -96,10 +96,26 @@ host default (proceed) would silently bypass enforce mode. A test pins the budge
 | `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | `1500` | Per-attempt resolve timeout |
 | `NOBLECLOAK_STATE_DIR` | `~/.noblecloak/claude-plugin` | State dir override (auth.json, audit queue) — mainly for tests |
 | `NOBLECLOAK_MIGRATE_FROM` | unset | An old state directory (for example a checkout that was renamed or moved) to migrate from; preferred over `<plugin>/.local` when it holds an `auth.json`; see README "State" |
-| `NOBLECLOAK_SDK_HOOK_ACTIVE` | unset (ignored) | Ignored since 0.2.6: setting it no longer skips resolve, enforcement or audit. Versions up to 0.2.5 skipped the hooks when it was set. The plugin stays out of Agent SDK sessions only because the SDK adapter runs with `settingSources: []` by default; if a caller loads this plugin into an SDK session, both the plugin and the adapter gate and audit each call (events are keyed `<tool_use_id>:pre`/`:post`, and deduplication against the adapter's ids is not guaranteed). Variables that still change trust behaviour (each is read from the hook process environment): `NOBLECLOAK_LOCAL_ENFORCE` (`true`/`1` makes the hook obey server decisions instead of audit-only); `NOBLECLOAK_COO_URL` (where resolve requests and audit events are sent); `NOBLECLOAK_ISSUER` (OAuth discovery, and where the refresh token is sent; a saved sign-in from a different issuer is not used); `NOBLECLOAK_GOVERN_URL` (audience of the govern-API token, otherwise derived from the MCP gateway origin); `NOBLECLOAK_MCP_FILE` (which `.mcp.json` decides which `mcp__<server>__` tools are treated as gateway-governed and skip resolve and audit); `NOBLECLOAK_DEV_TOKEN` (dev-only bearer used instead of the saved sign-in); `NOBLECLOAK_STATE_DIR` (where `auth.json` and the audit queue are read and written); `NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS` (test-only clock offsets for the resolve budget). Hardening these is tracked in a follow-up issue |
+| `NOBLECLOAK_SDK_HOOK_ACTIVE` | unset (ignored) | Ignored since 0.2.6: setting it no longer skips resolve, enforcement or audit. Versions up to 0.2.5 skipped the hooks when it was set. The plugin stays out of Agent SDK sessions only because the SDK adapter runs with `settingSources: []` by default; if a caller loads this plugin into an SDK session, both the plugin and the adapter gate and audit each call (events are keyed `<tool_use_id>:pre`/`:post`, and deduplication against the adapter's ids is not guaranteed). Other variables still change trust behaviour; see the table below the env-var table. |
 | `NOBLECLOAK_SIGNED_OUT_RECHECK_MS` | `900000` (15 min) | How often a signed-out plugin re-tries its refresh grant |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_RETENTION` | `2000` | Max unshipped Pre records kept in the audit queue (newest kept) |
 | `NOBLECLOAK_AUDIT_UNSHIPPED_MAX_AGE_MS` | `604800000` (7 days) | Max age of a kept unshipped Pre record |
+
+### Variables that still change trust behaviour
+
+This list is not exhaustive: it covers the variables with the largest effect on what is decided, what is audited, and where credentials go. Each is read from the plugin's process environment (the hooks, and for `NOBLECLOAK_GOVERN_URL` the command scripts). Hardening them is tracked in a follow-up issue.
+
+| Variable | Effect |
+|---|---|
+| `NOBLECLOAK_LOCAL_ENFORCE` | `true`, `1`, `yes` or `on` makes the PreToolUse hook obey server decisions instead of audit-only |
+| `NOBLECLOAK_COO_URL` | Where resolve requests and audit events are sent; the bearer token is sent with each request |
+| `NOBLECLOAK_ISSUER` | OAuth discovery, and where the refresh token is sent; a saved sign-in from a different issuer is not used |
+| `NOBLECLOAK_RESOLVE_TIMEOUT_MS` | Per-attempt resolve timeout; any positive integer is accepted, and a very low value forces the degraded path (enforce denies; audit-only allows with no resolution and a `degraded_reason: timeout` record) |
+| `NOBLECLOAK_GOVERN_URL` | Audience of the govern-API token; read by the command scripts (`setup`, `propose-tool`, service-principal login), not by the hooks |
+| `NOBLECLOAK_MCP_FILE` | The `.mcp.json` that decides which `mcp__<server>__` tools are gateway-governed; those tools skip resolve and the Pre audit record (a corroborating `:post` still ships) |
+| `NOBLECLOAK_DEV_TOKEN` | Honoured in any environment; replaces the bearer token for resolve and event ingest |
+| `NOBLECLOAK_STATE_DIR` | Where `auth.json` and the audit queue are read and written |
+| `NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS` | A test seam honoured in any environment; shifts the resolve-budget clock and forces the budget-exhausted degraded path |
 
 ## Channel detection
 
