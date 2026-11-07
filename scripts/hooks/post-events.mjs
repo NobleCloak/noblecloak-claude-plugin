@@ -150,7 +150,7 @@ function dispatchToWorker(envelopes, drain) {
 
 async function main() {
   // NOBLECLOAK_SDK_HOOK_ACTIVE no longer suppresses event delivery. Versions up
-  // to 0.2.5 returned here when it was set (plugin-dev#1); it is now ignored.
+  // to 0.2.5 returned here when it was set (noblecloak-claude-plugin#12); it is now ignored.
   let input;
   try {
     input = JSON.parse(await readStdin());

@@ -407,7 +407,7 @@ test('non-NobleCloak mcp__ tool emits the [:pre, :post] PAIR with no bn_corrobor
   assert.equal('bn_corroborated_by' in post.body.data, false);
 });
 
-// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (plugin-dev#1) ───────────────
+// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (noblecloak-claude-plugin#12) ───────────────
 
 test('NOBLECLOAK_SDK_HOOK_ACTIVE set: the :post event is still shipped (no seeded Pre, so a drain cannot stand in for it)', async () => {
   const stub = await startStub();

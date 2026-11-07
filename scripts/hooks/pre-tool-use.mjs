@@ -210,8 +210,10 @@ async function main(startedAt) {
 
   // NOBLECLOAK_SDK_HOOK_ACTIVE no longer skips this hook. Versions up to 0.2.5
   // skipped resolve and audit when it was set, which nothing could verify
-  // (plugin-dev#1); it is now ignored. (Other variables, such as
-  // NOBLECLOAK_LOCAL_ENFORCE and NOBLECLOAK_COO_URL, still change behavior.)
+  // (noblecloak-claude-plugin#12); it is now ignored. The closest remaining
+  // env-controlled skip is NOBLECLOAK_MCP_FILE, which picks the .mcp.json that
+  // decides which MCP tools bypass resolve and audit. Other variables, such as
+  // NOBLECLOAK_LOCAL_ENFORCE and NOBLECLOAK_COO_URL, also change behavior.
   let input;
   try {
     input = JSON.parse(await readStdin());
