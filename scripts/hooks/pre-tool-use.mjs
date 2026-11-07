@@ -208,14 +208,13 @@ async function resolveWithAuth(body) {
 async function main(startedAt) {
   const enforce = isEnforceMode();
 
-  // D6 — SDK adapter dedup contract (spike Q3 double-fire finding): when the
-  // future Agent SDK adapter is registered it sets this marker; the plugin
-  // hook no-ops to avoid double-resolve/double-audit.
-  if (process.env.NOBLECLOAK_SDK_HOOK_ACTIVE) {
-    emit('allow', 'NobleCloak governance: deferring to active SDK hook adapter.');
-    return;
-  }
-
+  // NOBLECLOAK_SDK_HOOK_ACTIVE no longer skips this hook. Versions up to 0.2.5
+  // skipped resolve and audit when it was set, which nothing could verify
+  // (noblecloak-claude-plugin#12); it is now ignored. The closest remaining
+  // env-controlled skip is NOBLECLOAK_MCP_FILE, which picks the .mcp.json that
+  // decides which MCP tools bypass resolve and the Pre audit record (a
+  // corroborating :post still ships). Other variables, such as
+  // NOBLECLOAK_LOCAL_ENFORCE and NOBLECLOAK_COO_URL, also change behavior.
   let input;
   try {
     input = JSON.parse(await readStdin());

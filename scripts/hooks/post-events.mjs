@@ -149,11 +149,8 @@ function dispatchToWorker(envelopes, drain) {
 }
 
 async function main() {
-  // SDK adapter dedup contract (spike Q3 double-fire finding): when the future
-  // Agent SDK adapter is registered it sets this marker; the plugin hook
-  // no-ops to avoid double-audit. Exit before reading the queue or spilling.
-  if (process.env.NOBLECLOAK_SDK_HOOK_ACTIVE) return;
-
+  // NOBLECLOAK_SDK_HOOK_ACTIVE no longer suppresses event delivery. Versions up
+  // to 0.2.5 returned here when it was set (noblecloak-claude-plugin#12); it is now ignored.
   let input;
   try {
     input = JSON.parse(await readStdin());

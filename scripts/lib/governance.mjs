@@ -70,9 +70,8 @@ export const PLUGIN_ROOT = dirname(dirname(__dirname));
 //                            Primarily for tests.
 //   NOBLECLOAK_MCP_FILE        Override for the .mcp.json path. Default:
 //                            $PLUGIN_ROOT/.mcp.json. Primarily for tests.
-//   NOBLECLOAK_SDK_HOOK_ACTIVE Dedup marker set by the future Agent SDK adapter
-//                            (epic brief #7) — when present the plugin hook
-//                            no-ops to avoid double-fire (spike Q3 finding).
+//   NOBLECLOAK_SDK_HOOK_ACTIVE Ignored since 0.2.6. Versions up to 0.2.5 skipped
+//                            the hooks when it was set (noblecloak-claude-plugin#12).
 
 export const DEFAULT_ISSUER = 'https://api.noblecloak.com';
 export const DEFAULT_COO_URL = 'https://api.noblecloak.com';
@@ -129,8 +128,8 @@ export function remainingBudgetMs(deadline, perAttemptMs, now = Date.now) {
 }
 
 /**
- * Clock for the resolve budget checkpoints. Production always returns the live
- * `Date.now`. TEST SEAM: when NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS is set (a
+ * Clock for the resolve budget checkpoints. Without the variable it returns the live
+ * `Date.now`; the variable is honoured in any environment. TEST SEAM: when NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS is set (a
  * comma-separated list of ms offsets, e.g. "0,5000"), successive calls return
  * `Date.now() + offset[i]` with the last offset sticky. This lets a test
  * simulate elapsed wall-clock at each checkpoint and deterministically
