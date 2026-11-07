@@ -128,8 +128,8 @@ export function remainingBudgetMs(deadline, perAttemptMs, now = Date.now) {
 }
 
 /**
- * Clock for the resolve budget checkpoints. Production always returns the live
- * `Date.now`. TEST SEAM: when NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS is set (a
+ * Clock for the resolve budget checkpoints. Without the variable it returns the live
+ * `Date.now`; the variable is honoured in any environment. TEST SEAM: when NOBLECLOAK_TEST_BUDGET_NOW_OFFSETS is set (a
  * comma-separated list of ms offsets, e.g. "0,5000"), successive calls return
  * `Date.now() + offset[i]` with the last offset sticky. This lets a test
  * simulate elapsed wall-clock at each checkpoint and deterministically
