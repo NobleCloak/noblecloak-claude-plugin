@@ -417,7 +417,9 @@ test('NOBLECLOAK_SDK_HOOK_ACTIVE set: the :post event is still shipped (no seede
     stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
   );
   assert.equal(result.code, 0);
-  const events = await stub.waitForEvents(1);
+  // No seeded Pre: the hook ships a reconstructed :pre and the :post. Wait for
+  // both, or the poll can return with only :pre.
+  const events = await stub.waitForEvents(2);
   await stub.close();
   const post = events.find((e) => e.body.id === 'toolu_0123456789:post');
   assert.ok(post, 'the marker must not suppress the :post envelope');
