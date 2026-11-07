@@ -656,7 +656,7 @@ test('shape drift in audit-only: warns but allows, degraded audit record appende
   assert.equal(record.would_decision, 'deny'); // Bash → delete-level offline
 });
 
-// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (plugin-dev#1) ───────────────
+// ── NOBLECLOAK_SDK_HOOK_ACTIVE is not honoured (noblecloak-claude-plugin#12) ───────────────
 
 test('NOBLECLOAK_SDK_HOOK_ACTIVE set + enforce: still resolves, still denies, still audits', async () => {
   const stub = await startStub();
@@ -683,9 +683,12 @@ test('NOBLECLOAK_SDK_HOOK_ACTIVE set + audit-only: resolves and audits, never de
     stubEnv(stub, stateDir, { NOBLECLOAK_SDK_HOOK_ACTIVE: '1' })
   );
   await stub.close();
+  assert.equal(decisionOf(result), 'allow');
   assert.doesNotMatch(result.output.hookSpecificOutput.permissionDecisionReason, /SDK/i);
   assert.equal(stub.resolveRequests().length, 1);
-  assert.equal(readAuditRecords(stateDir).length, 1);
+  const records = readAuditRecords(stateDir);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].degraded, false);
 });
 
 // ── per-call record contract (the brief #5 seam) ────────────────────────────
