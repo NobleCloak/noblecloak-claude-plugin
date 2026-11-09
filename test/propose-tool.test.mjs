@@ -664,7 +664,7 @@ test('continuation_kinds lists kinds without mcp_held → exit 1, deployment-bla
   try {
     const r = await run(env);
     assert.equal(r.code, 1);
-    assert.match(r.stderr, /deployment cannot route this proposal \(continuation_kind_not_accepted\).*adk, webhook.*not mcp_held/);
+    assert.match(r.stderr, /Refused before sending:.*\(adk, webhook\) without mcp_held.*400 invalid_request/);
     assert.deepEqual(callsOf(stub), ['GET /v1/capabilities']);
   } finally {
     await stub.close();

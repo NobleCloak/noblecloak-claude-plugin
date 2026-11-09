@@ -179,7 +179,7 @@ async function main() {
       const decision = continuationKindDecision(await caps.json());
       if (!decision.ok) {
         console.error(
-          `The deployment cannot route this proposal (continuation_kind_not_accepted) — it accepts the continuation kinds ${decision.advertised.join(', ') || '(none)'} and not ${CONTINUATION_KIND}, which this command sends — changing the input will not help; report this to your administrator.`
+          `Refused before sending: the deployment's GET /v1/capabilities lists the continuation kinds it accepts (${decision.advertised.join(', ') || 'none'}) without ${CONTINUATION_KIND}, which this command sends. Without this pre-check the server answers 400 invalid_request for the same condition. Changing the input will not help; report this to your administrator.`
         );
         return 1;
       }
