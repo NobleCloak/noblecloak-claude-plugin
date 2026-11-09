@@ -15,7 +15,8 @@ export const REV16_CONTINUATION_KINDS = ['adk', 'langgraph', 'vercel_ai', 'opena
  * at least one item, so an empty list is non-conformant, and it is refused here (the langgraph-ts adapter does the same).
  */
 export function continuationKindDecision(capabilities, kind = CONTINUATION_KIND) {
-  const caps = capabilities?.data ?? capabilities;
+  // Envelope when there is a `data` key (even null: then nothing is read); a bare Capabilities only without one.
+  const caps = capabilities !== null && typeof capabilities === 'object' && 'data' in capabilities ? capabilities.data : capabilities;
   const kinds = caps?.continuation_kinds;
   if (!Array.isArray(kinds) || !kinds.every((k) => typeof k === 'string')) return { ok: true };
   return kinds.includes(kind) ? { ok: true } : { ok: false, advertised: kinds };

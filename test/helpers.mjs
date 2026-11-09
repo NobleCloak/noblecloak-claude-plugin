@@ -123,6 +123,12 @@ export async function startStub() {
         return;
       }
 
+      if (req.method === 'GET' && req.url === '/v1/capabilities' && stub.capabilitiesResponse?.redirectTo) {
+        res.writeHead(302, { Location: stub.capabilitiesResponse.redirectTo });
+        res.end();
+        return;
+      }
+
       if (req.method === 'GET' && req.url === '/v1/capabilities' && stub.capabilitiesResponse) {
         res.writeHead(stub.capabilitiesResponse.status, { 'Content-Type': 'application/json' });
         res.end(stub.capabilitiesResponse.rawBody ?? JSON.stringify(stub.capabilitiesResponse.body ?? {}));

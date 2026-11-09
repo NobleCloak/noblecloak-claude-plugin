@@ -173,6 +173,7 @@ async function main() {
   try {
     const caps = await fetch(`${resource}/v1/capabilities`, {
       headers: { Authorization: `Bearer ${token}` },
+      redirect: 'error', // a redirect could hand the decision to another host: it fails open
       signal: AbortSignal.timeout(CAPABILITIES_TIMEOUT_MS),
     });
     if (caps.ok) {

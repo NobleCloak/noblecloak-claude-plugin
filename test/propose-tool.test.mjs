@@ -700,3 +700,20 @@ test('capabilities unreachable path (hangs past the timeout) → fails open', as
     await stub.close();
   }
 });
+
+test('a redirect on the capabilities GET is not followed: fails open, the other host is never asked', async () => {
+  const other = await startStub();
+  other.capabilitiesResponse = { status: 200, body: { data: { continuation_kinds: ['adk'] } } };
+  const stub = await startStub();
+  stub.capabilitiesResponse = { redirectTo: `${other.url}/v1/capabilities` };
+  const { env } = setup(stub);
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(callsOf(stub), ['GET /v1/capabilities', 'POST /v1/approvals']);
+    assert.deepEqual(other.requests, []);
+  } finally {
+    await stub.close();
+    await other.close();
+  }
+});

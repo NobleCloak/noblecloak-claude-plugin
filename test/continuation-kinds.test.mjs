@@ -15,3 +15,6 @@ test('listed with mcp_held is ok; listed without is refused with the advertised 
   assert.deepEqual(continuationKindDecision({ continuation_kinds: ['adk'] }), { ok: false, advertised: ['adk'] });
   assert.deepEqual(continuationKindDecision({ data: { continuation_kinds: [] } }), { ok: false, advertised: [] });
 });
+test('data present but null never falls back to the outer object', () => {
+  assert.deepEqual(continuationKindDecision({ data: null, continuation_kinds: ['adk'] }), { ok: true });
+});
