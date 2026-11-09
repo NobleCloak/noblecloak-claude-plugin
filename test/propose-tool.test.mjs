@@ -85,7 +85,7 @@ test('happy path: id and the no-link approval line, one POST /v1/approvals with 
     const r = await run(env, [...GOOD_ARGS, '--description', 'send mail', '--owner', 'principal', '--show-arguments']);
     assert.equal(r.code, 0, r.stderr);
     assert.equal(r.stdout, 'Approval opened: apr_test_1\nApprove it in the NobleCloak approvals module.\n');
-    assert.deepEqual(stub.requests.map((q) => `${q.method} ${q.path}`), ['POST /v1/approvals']);
+    assert.deepEqual(stub.requests.map((q) => `${q.method} ${q.path}`), ['GET /v1/capabilities', 'POST /v1/approvals']);
     const [req] = approvals(stub);
     assert.equal(req.headers.authorization, 'Bearer gv-token');
     assert.equal(req.headers['idempotency-key'], undefined, 'replay safety is the server-side equal-proposal 200, not a random key');
@@ -426,14 +426,14 @@ test('sign-in denied at the consent screen → exit 3, no proposal sent', async 
   }
 });
 
-test('the script reaches no catalog/tools route (only the approvals open, plus auth)', () => {
+test('the script reaches no catalog/tools route (only the approvals open and the capabilities read, plus auth)', () => {
   for (const f of ['scripts/propose-tool.mjs', 'scripts/lib/proposal.mjs', 'scripts/lib/pkce-flow.mjs']) {
     const src = readFileSync(join(REPO_ROOT, f), 'utf-8');
     assert.doesNotMatch(src, /\/v1\/tools|\/catalog|tools\/list|\/v1\/coo\//, `${f} must not call a catalog/tools route`);
   }
   const src = readFileSync(join(REPO_ROOT, 'scripts/propose-tool.mjs'), 'utf-8');
   const routes = [...src.matchAll(/\/v1\/[a-z/]+/g)].map((m) => m[0]);
-  assert.deepEqual([...new Set(routes)], ['/v1/approvals']);
+  assert.deepEqual([...new Set(routes)], ['/v1/approvals', '/v1/capabilities']);
 });
 
 test('401 drops the stored govern token (the gateway token stays), so a re-run signs in afresh', async () => {
@@ -623,6 +623,79 @@ test('a redirect port that differs from the persisted client never re-registers 
     assert.match(r.stderr, /registered OAuth client/);
     assert.equal(stub.requests.filter((q) => q.path === '/auth/oauth/register').length, 0);
     assert.equal(readFileSync(join(dir, 'client.json'), 'utf-8'), persisted);
+  } finally {
+    await stub.close();
+  }
+});
+
+// Contract rev 17: Capabilities.continuation_kinds (absent = the seven rev-16 kinds, mcp_held among them).
+const withCaps = async (capabilitiesResponse) => {
+  const stub = await startStub();
+  stub.capabilitiesResponse = capabilitiesResponse;
+  return { stub, ...setup(stub) };
+};
+const callsOf = (stub) => stub.requests.filter((q) => q.path === '/v1/capabilities' || q.path === '/v1/approvals').map((q) => `${q.method} ${q.path}`);
+
+test('continuation_kinds absent → proceeds and POSTs', async () => {
+  const { stub, env } = await withCaps({ status: 200, body: { data: { deployment: 'hosted' }, meta: {} } });
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(callsOf(stub), ['GET /v1/capabilities', 'POST /v1/approvals']);
+    assert.equal(stub.requests.find((q) => q.path === '/v1/capabilities').headers.authorization, 'Bearer gv-token');
+  } finally {
+    await stub.close();
+  }
+});
+
+test('continuation_kinds lists mcp_held → proceeds and POSTs', async () => {
+  const { stub, env } = await withCaps({ status: 200, body: { data: { continuation_kinds: ['adk', 'mcp_held', 'claude_agent_sdk'] }, meta: {} } });
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(callsOf(stub), ['GET /v1/capabilities', 'POST /v1/approvals']);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('continuation_kinds lists kinds without mcp_held → exit 1, deployment-blaming message, no POST', async () => {
+  const { stub, env } = await withCaps({ status: 200, body: { data: { continuation_kinds: ['adk', 'webhook'] }, meta: {} } });
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /deployment cannot route this proposal \(continuation_kind_not_accepted\).*adk, webhook.*not mcp_held/);
+    assert.deepEqual(callsOf(stub), ['GET /v1/capabilities']);
+  } finally {
+    await stub.close();
+  }
+});
+
+for (const [name, resp] of [
+  ['404', { status: 404, body: { type: 'https://docs.noblecloak.com/problems/not_found' } }],
+  ['500', { status: 500, body: {} }],
+  ['non-2xx that still carries a list without mcp_held', { status: 503, body: { data: { continuation_kinds: ['adk'] } } }],
+  ['non-JSON 200', { status: 200, rawBody: 'not json' }],
+]) {
+  test(`capabilities ${name} → fails open, POST proceeds`, async () => {
+    const { stub, env } = await withCaps(resp);
+    try {
+      const r = await run(env);
+      assert.equal(r.code, 0, r.stderr);
+      assert.deepEqual(callsOf(stub), ['GET /v1/capabilities', 'POST /v1/approvals']);
+    } finally {
+      await stub.close();
+    }
+  });
+}
+
+test('capabilities unreachable path (hangs past the timeout) → fails open', async () => {
+  const stub = await startStub();
+  stub.hangPaths = ['/v1/capabilities'];
+  const { env } = setup(stub);
+  try {
+    const r = await run(env);
+    assert.equal(r.code, 0, r.stderr);
   } finally {
     await stub.close();
   }

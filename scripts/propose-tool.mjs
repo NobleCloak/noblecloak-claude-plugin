@@ -38,8 +38,10 @@ import {
 import { governToken } from './lib/govern-token.mjs';
 import { SignInError } from './lib/pkce-flow.mjs';
 import { approvalRequestBody, validateProposal } from './lib/proposal.mjs';
+import { CONTINUATION_KIND, continuationKindDecision } from './lib/continuation-kinds.mjs';
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const CAPABILITIES_TIMEOUT_MS = 3_000;
 // Problem codes that mean the PROPOSAL itself was refused (fixable input). Classified by
 // code, not status: approval_unroutable / continuation_unsupported / invalid_continuation
 // also arrive as 422 but describe the deployment, which no input change can fix.
@@ -164,6 +166,26 @@ async function main() {
     // Port, endpoint, config and auth-file failures: a fresh login would not fix them.
     console.error(`Could not sign in to the approvals API — ${err.message}`);
     return 1;
+  }
+
+  // Best effort (contract rev 17): refuse before the POST when the deployment lists the continuation kinds it
+  // accepts and ours is missing. Any failure here (network, timeout, non-2xx, bad JSON) proceeds as before.
+  try {
+    const caps = await fetch(`${resource}/v1/capabilities`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(CAPABILITIES_TIMEOUT_MS),
+    });
+    if (caps.ok) {
+      const decision = continuationKindDecision(await caps.json());
+      if (!decision.ok) {
+        console.error(
+          `The deployment cannot route this proposal (continuation_kind_not_accepted) — it accepts the continuation kinds ${decision.advertised.join(', ') || '(none)'} and not ${CONTINUATION_KIND}, which this command sends — changing the input will not help; report this to your administrator.`
+        );
+        return 1;
+      }
+    }
+  } catch {
+    // fail open
   }
 
   let response;

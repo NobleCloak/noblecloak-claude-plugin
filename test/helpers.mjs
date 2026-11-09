@@ -46,6 +46,7 @@ export async function startStub() {
     eventErrorBody: null, // JSON body for a non-2xx events response (default { error: 'ingest-failed' })
     // POST /v1/approvals (govern module API) — { status, body, contentType }.
     approvalsResponse: { status: 201, body: { data: { id: 'apr_test_1', state: 'pending', created: true }, meta: {} } },
+    capabilitiesResponse: null, // GET /v1/capabilities — { status, body }; null = 404
     hang: false,
     hangPaths: [],
     resolveCallCount: 0,
@@ -119,6 +120,12 @@ export async function startStub() {
         res.end(
           JSON.stringify(stub.eventStatus < 300 ? stub.eventBody : (stub.eventErrorBody ?? { error: 'ingest-failed' }))
         );
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/v1/capabilities' && stub.capabilitiesResponse) {
+        res.writeHead(stub.capabilitiesResponse.status, { 'Content-Type': 'application/json' });
+        res.end(stub.capabilitiesResponse.rawBody ?? JSON.stringify(stub.capabilitiesResponse.body ?? {}));
         return;
       }
 
