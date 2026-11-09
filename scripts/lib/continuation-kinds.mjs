@@ -11,7 +11,8 @@ export const REV16_CONTINUATION_KINDS = ['adk', 'langgraph', 'vercel_ai', 'opena
  * Decide from a GET /v1/capabilities body (the `{data, meta}` envelope, or the bare Capabilities) whether the
  * deployment accepts `kind`. Returns { ok: true } or { ok: false, advertised }. Anything unreadable (not an
  * object, `continuation_kinds` absent or not an array of strings) is { ok: true }: the deployment stays the
- * authority and refuses at POST time, so this check only ever fails fast on an explicit, well-formed list.
+ * authority and refuses at POST time. An explicit list of strings decides, including `[]`: the contract requires
+ * at least one item, so an empty list is non-conformant, and it is refused here (the langgraph-ts adapter does the same).
  */
 export function continuationKindDecision(capabilities, kind = CONTINUATION_KIND) {
   const caps = capabilities?.data ?? capabilities;
