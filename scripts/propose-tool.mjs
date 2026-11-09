@@ -11,6 +11,10 @@
  * tools route. It prints the approval id and one approval line, and never opens
  * a browser for the approval itself.
  *
+ * Before the POST it makes one best-effort GET {govern}/v1/capabilities (3 s, no redirects, bearer token): when the
+ * deployment lists `continuation_kinds` without mcp_held it refuses locally (exit 1); any other outcome, including
+ * every fetch/parse/non-2xx failure, proceeds to the POST.
+ *
  * Token: a govern-audience user token (RFC 8707 resource = the govern origin),
  * stored beside the gateway token in auth.json. First run (or an expired,
  * unrefreshable token) performs a PKCE sign-in with a consent screen.
