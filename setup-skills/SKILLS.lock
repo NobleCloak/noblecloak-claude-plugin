@@ -18,7 +18,7 @@
     },
     "langgraph": {
       "repo": "NobleCloak/noblecloak-langgraph-ts",
-      "sha": "04d4c71fca47ea2d8faea6201a9448e076711fc0",
+      "sha": "1e70a4b15d53266971490bea0c4fd8bcea5c208d",
       "path": "skills/langgraph"
     }
   },
@@ -26,7 +26,7 @@
     "react": "0.9.0",
     "client": "0.13.0",
     "theme": "0.1.2",
-    "langgraph": "0.4.1"
+    "langgraph": "0.5.0"
   },
   "files": {
     "setup-skills/noblecloak-setup-approvals/SKILL.md": "5cd2b37df9500f507ea310921e3372c3fc31f97c9b56b9a1cb9d9d1b3ba4df1c",
