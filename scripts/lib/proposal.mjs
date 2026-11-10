@@ -7,6 +7,8 @@
  * only fails fast, before a sign-in or a network call.
  */
 
+import { CONTINUATION_KIND } from './continuation-kinds.mjs';
+
 export const SET_TOOL_POLICY_REF = 'tool:noblecloak:set-tool-policy';
 const RESERVED_PREFIX = 'tool:noblecloak:';
 export const SIDE_EFFECT_LEVELS = ['read', 'write', 'delete', 'external', 'admin'];
@@ -60,7 +62,7 @@ export function approvalRequestBody(proposal) {
     // the effect on approval). Kind/delivery are from the closed sets in coo
     // module-api continuation.ts.
     continuation: {
-      kind: 'mcp_held',
+      kind: CONTINUATION_KIND, // the kind propose-tool.mjs pre-checks against continuation_kinds
       delivery: 'held',
       correlation: { surface: 'noblecloak-claude-plugin', tool_ref: proposal.tool_ref },
     },
